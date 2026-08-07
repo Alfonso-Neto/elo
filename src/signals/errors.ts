@@ -51,6 +51,9 @@ export function toSignalDomainError(error: unknown): SignalDomainError {
   if (backendMessage.includes('one active student workspace')) {
     return new SignalDomainError('student_workspace_required')
   }
+  if (backendMessage.includes('current consent policy') && backendMessage.includes('unavailable')) {
+    return new SignalDomainError('consent_policy_unavailable')
+  }
   if (backendMessage.includes('current health-processing consent')) {
     return new SignalDomainError('consent_required')
   }

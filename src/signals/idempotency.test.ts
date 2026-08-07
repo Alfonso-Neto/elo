@@ -37,4 +37,15 @@ describe('signal access errors', () => {
     expect(error.stack).not.toContain('private row')
     expect(JSON.stringify(error)).not.toContain('private row')
   })
+
+  it('maps the consent RPC policy absence without retaining backend text', () => {
+    const error = toSignalDomainError({
+      code: 'P0001',
+      message: 'current consent policy is unavailable: internal detail',
+    })
+
+    expect(error.code).toBe('consent_policy_unavailable')
+    expect(error.message).not.toContain('internal detail')
+    expect(error.cause).toBeUndefined()
+  })
 })

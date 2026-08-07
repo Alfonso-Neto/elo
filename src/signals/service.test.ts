@@ -258,41 +258,56 @@ describe('signal mutation contracts', () => {
     expect(fake.rpcCalls).toHaveLength(0)
   })
 
-  it('fails closed when a consent insert response crosses the selected membership', async () => {
-    const fake = new FakeSignalClient()
-      .queueTable('workspace_members', ok([{
-        workspace_id: workspaceId,
-        user_id: userId,
-        role: 'student',
-        status: 'active',
-      }]))
-      .queueTable('consent_policies', ok({
-        purpose: 'health_processing',
-        policy_version: '2026-08-07-v1',
-        published_at: timestamp,
-      }))
-      .queueTable('consent_events', ok({
-        id: consentId,
-        workspace_id: otherWorkspaceId,
-        student_user_id: userId,
-        purpose: 'health_processing',
-        policy_version: '2026-08-07-v1',
-        action: 'granted',
-        created_at: timestamp,
-      }))
-    const service = createSignalService(fake.asClient())
-
-    await expect(service.grantCurrentHealthConsent({
-      idempotencyKey: key('consent-granted'),
-    })).rejects.toMatchObject({ code: 'service_unavailable' })
-
-    expect(fake.queryCalls.find((call) => call.table === 'consent_events')?.inserted).toEqual({
+  it('retries consent with the same RPC key and returns the existing event contract', async () => {
+    const consentRow = {
+      id: consentId,
       workspace_id: workspaceId,
+      student_user_id: userId,
       purpose: 'health_processing',
       policy_version: '2026-08-07-v1',
       action: 'granted',
-      idempotency_key: key('consent-granted'),
-    })
+      created_at: timestamp,
+    }
+    const fake = new FakeSignalClient().queueRpc(
+      'record_current_health_consent',
+      ok(consentRow),
+      ok([consentRow]),
+    )
+    const service = createSignalService(fake.asClient())
+    const command = { idempotencyKey: key('consent-granted') }
+
+    await expect(service.grantCurrentHealthConsent(command)).resolves.toMatchObject({ id: consentId })
+    await expect(service.grantCurrentHealthConsent(command)).resolves.toMatchObject({ id: consentId })
+
+    expect(fake.rpcCalls).toEqual([
+      {
+        name: 'record_current_health_consent',
+        args: { p_action: 'granted', p_idempotency_key: command.idempotencyKey },
+      },
+      {
+        name: 'record_current_health_consent',
+        args: { p_action: 'granted', p_idempotency_key: command.idempotencyKey },
+      },
+    ])
+    expect(fake.queryCalls).toHaveLength(0)
+  })
+
+  it('fails closed when the consent RPC response belongs to another student', async () => {
+    const fake = new FakeSignalClient().queueRpc('record_current_health_consent', ok({
+      id: consentId,
+      workspace_id: otherWorkspaceId,
+      student_user_id: otherUserId,
+      purpose: 'health_processing',
+      policy_version: '2026-08-07-v1',
+      action: 'withdrawn',
+      created_at: timestamp,
+    }))
+    const service = createSignalService(fake.asClient())
+
+    await expect(service.recordCurrentHealthConsent({
+      action: 'withdrawn',
+      idempotencyKey: key('consent-withdrawn'),
+    })).rejects.toMatchObject({ code: 'service_unavailable' })
   })
 })
 

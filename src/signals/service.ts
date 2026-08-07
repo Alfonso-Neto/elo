@@ -18,6 +18,7 @@ import {
   type PainReport,
   type PainReportEvent,
   type PainReportSummary,
+  type RecordHealthConsentCommand,
   type ResolvePainReportCommand,
   type SignalPage,
   type SignalPageOptions,
@@ -149,6 +150,12 @@ function assertIdempotencyKey(value: unknown) {
 function commandKey(command: unknown) {
   if (!isRecord(command)) throw new SignalDomainError('validation')
   return assertIdempotencyKey(command.idempotencyKey)
+}
+
+function rpcRow(data: unknown) {
+  if (!Array.isArray(data)) return data
+  if (data.length !== 1) throw new SignalDomainError('service_unavailable')
+  return data[0]
 }
 
 function parseMembership(row: unknown): ActiveStudentMembership {
@@ -334,36 +341,24 @@ export function createSignalService(client: SignalSupabaseClient = requireSupaba
     })
   }
 
-  async function recordCurrentHealthConsent(
-    action: 'granted' | 'withdrawn',
-    command: IdempotentSignalCommand,
-  ): Promise<ConsentEvent> {
+  async function recordCurrentHealthConsent(command: RecordHealthConsentCommand): Promise<ConsentEvent> {
     return runSafely(async () => {
       const idempotencyKey = commandKey(command)
-      const [membership, policy] = await Promise.all([
-        fetchActiveStudentMembership(),
-        fetchCurrentConsentPolicy(),
-      ])
-      const { data, error } = await client
-        .from('consent_events')
-        .insert({
-          workspace_id: membership.workspaceId,
-          purpose: policy.purpose,
-          policy_version: policy.policyVersion,
-          action,
-          idempotency_key: idempotencyKey,
-        })
-        .select('id, workspace_id, student_user_id, purpose, policy_version, action, created_at')
-        .single()
+      if (command.action !== 'granted' && command.action !== 'withdrawn') {
+        throw new SignalDomainError('validation', { fieldErrors: { action: 'Ação de consentimento inválida.' } })
+      }
+      const userId = await currentUserId()
+      const { data, error } = await client.rpc('record_current_health_consent', {
+        p_action: command.action,
+        p_idempotency_key: idempotencyKey,
+      })
 
       if (error) throw error
-      const event = parseConsentEvent(data)
+      const event = parseConsentEvent(rpcRow(data))
       if (
-        event.workspaceId !== membership.workspaceId
-        || event.studentUserId !== membership.userId
-        || event.policyVersion !== policy.policyVersion
-        || event.purpose !== policy.purpose
-        || event.action !== action
+        event.studentUserId !== userId
+        || event.purpose !== 'health_processing'
+        || event.action !== command.action
       ) throw new SignalDomainError('service_unavailable')
       return event
     })
@@ -515,8 +510,15 @@ export function createSignalService(client: SignalSupabaseClient = requireSupaba
   return {
     fetchActiveStudentMembership,
     fetchCurrentConsentPolicy,
-    grantCurrentHealthConsent: (command: IdempotentSignalCommand) => recordCurrentHealthConsent('granted', command),
-    withdrawCurrentHealthConsent: (command: IdempotentSignalCommand) => recordCurrentHealthConsent('withdrawn', command),
+    recordCurrentHealthConsent,
+    grantCurrentHealthConsent: (command: IdempotentSignalCommand) => recordCurrentHealthConsent({
+      ...command,
+      action: 'granted',
+    }),
+    withdrawCurrentHealthConsent: (command: IdempotentSignalCommand) => recordCurrentHealthConsent({
+      ...command,
+      action: 'withdrawn',
+    }),
     createPainReport,
     listOwnReports,
     listWorkspaceReports,

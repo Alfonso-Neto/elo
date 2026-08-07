@@ -63,6 +63,12 @@ export type IdempotentSignalCommand = {
   idempotencyKey: string
 }
 
+export type HealthConsentAction = 'granted' | 'withdrawn'
+
+export type RecordHealthConsentCommand = IdempotentSignalCommand & {
+  action: HealthConsentAction
+}
+
 export type CreatePainReportCommand = IdempotentSignalCommand & {
   draft: PainReportDraft
 }
@@ -106,7 +112,7 @@ export type ConsentEvent = {
   studentUserId: string
   purpose: 'health_processing'
   policyVersion: string
-  action: 'granted' | 'withdrawn'
+  action: HealthConsentAction
   createdAt: string
 }
 
