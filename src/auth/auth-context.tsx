@@ -1,12 +1,20 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { AuthChangeEvent, Session } from '@supabase/supabase-js'
 import { publicSupabaseConfig, supabase } from '../lib/supabase'
+import { boundedText, isCanonicalUuid } from '../onboarding/boundary-validation'
 import type { Role } from '../types'
 
 export type AuthProfile = {
   id: string
   accountRole: Role
   displayName: string
+}
+
+export type ActiveMembership = {
+  workspaceId: string
+  workspaceName: string
+  membershipRole: 'owner' | 'trainer' | 'student'
+  trainerName: string
 }
 
 export type SignUpInput = {
@@ -25,6 +33,7 @@ type AuthContextValue = {
   loading: boolean
   session: Session | null
   profile: AuthProfile | null
+  membership: ActiveMembership | null
   isDemo: boolean
   recoveryMode: boolean
   accessError: string | null
@@ -33,6 +42,7 @@ type AuthContextValue = {
   resendConfirmation: (email: string) => Promise<void>
   requestPasswordReset: (email: string) => Promise<void>
   updatePassword: (password: string) => Promise<void>
+  refreshMembership: () => Promise<ActiveMembership | null>
   signOut: () => Promise<void>
   enterDemo: () => void
   leaveDemo: () => void
@@ -49,13 +59,31 @@ function redirectTo(route: 'confirmar-email' | 'redefinir-senha') {
   return `${window.location.origin}${window.location.pathname}#/${route}`
 }
 
-function normalizeProfile(row: unknown, expectedId: string): AuthProfile | null {
+export function normalizeProfile(row: unknown, expectedId: string): AuthProfile | null {
   if (!row || typeof row !== 'object') return null
   const candidate = row as { id?: unknown; account_role?: unknown; display_name?: unknown }
-  if (candidate.id !== expectedId) return null
+  if (!isCanonicalUuid(expectedId) || !isCanonicalUuid(candidate.id) || candidate.id !== expectedId) return null
   if (candidate.account_role !== 'trainer' && candidate.account_role !== 'student') return null
-  if (typeof candidate.display_name !== 'string' || candidate.display_name.trim().length < 2) return null
-  return { id: candidate.id, accountRole: candidate.account_role, displayName: candidate.display_name.trim() }
+  const displayName = boundedText(candidate.display_name)
+  if (!displayName) return null
+  return { id: candidate.id, accountRole: candidate.account_role, displayName }
+}
+
+export function normalizeMembership(data: unknown): ActiveMembership | null {
+  const row = Array.isArray(data) ? data[0] : data
+  if (!row || typeof row !== 'object') return null
+  const candidate = row as Record<string, unknown>
+  if (!isCanonicalUuid(candidate.workspace_id)) return null
+  const workspaceName = boundedText(candidate.workspace_name)
+  const trainerName = boundedText(candidate.trainer_name)
+  if (!workspaceName || !trainerName) return null
+  if (!['owner', 'trainer', 'student'].includes(String(candidate.membership_role))) return null
+  return {
+    workspaceId: candidate.workspace_id,
+    workspaceName,
+    membershipRole: candidate.membership_role as ActiveMembership['membershipRole'],
+    trainerName,
+  }
 }
 
 function homeFor(role: Role) {
@@ -67,6 +95,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(() => !isDemo && publicSupabaseConfig.configured)
   const [session, setSession] = useState<Session | null>(null)
   const [profile, setProfile] = useState<AuthProfile | null>(null)
+  const [membership, setMembership] = useState<ActiveMembership | null>(null)
   const [recoveryMode, setRecoveryMode] = useState(false)
   const [accessError, setAccessError] = useState<string | null>(publicSupabaseConfig.issue)
   const requestVersion = useRef(0)
@@ -88,14 +117,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!nextProfile) {
       setSession(null)
       setProfile(null)
+      setMembership(null)
       setLoading(false)
       setAccessError('Não foi possível validar o perfil desta conta. Entre novamente ou fale com o suporte.')
       await supabase.auth.signOut({ scope: 'local' })
       return
     }
 
+    const { data: membershipData, error: membershipError } = await supabase.rpc('get_my_active_membership')
+    if (version !== requestVersion.current) return
+    const nextMembership = membershipError ? null : normalizeMembership(membershipData)
+    const hasExpectedMembership = nextProfile.accountRole === 'student'
+      ? !nextMembership || nextMembership.membershipRole === 'student'
+      : Boolean(nextMembership && ['owner', 'trainer'].includes(nextMembership.membershipRole))
+    if (membershipError || !hasExpectedMembership) {
+      setSession(null)
+      setProfile(null)
+      setMembership(null)
+      setLoading(false)
+      setAccessError('Não foi possível validar o espaço desta conta. Entre novamente ou fale com o suporte.')
+      await supabase.auth.signOut({ scope: 'local' })
+      return
+    }
+
     setSession(nextSession)
     setProfile(nextProfile)
+    setMembership(nextMembership)
     setLoading(false)
     if (event === 'PASSWORD_RECOVERY') {
       setRecoveryMode(true)
@@ -115,6 +162,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       requestVersion.current += 1
       setSession(null)
       setProfile(null)
+      setMembership(null)
       setLoading(false)
       return
     }
@@ -126,6 +174,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (error || !data.session) {
         setSession(null)
         setProfile(null)
+        setMembership(null)
         setLoading(false)
         if (error) setAccessError('Não foi possível validar sua sessão. Tente entrar novamente.')
         return
@@ -140,6 +189,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           requestVersion.current += 1
           setSession(null)
           setProfile(null)
+          setMembership(null)
           setRecoveryMode(false)
           setLoading(false)
           return
@@ -214,9 +264,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     requestVersion.current += 1
     setSession(null)
     setProfile(null)
+    setMembership(null)
     setRecoveryMode(false)
     window.history.replaceState(null, '', '#/entrar')
   }, [ensureClient])
+
+  const refreshMembership = useCallback(async () => {
+    if (!supabase || !session || !profile) return null
+    const { data, error } = await supabase.rpc('get_my_active_membership')
+    if (error) throw new Error('Não foi possível atualizar o vínculo desta conta.')
+    const nextMembership = normalizeMembership(data)
+    const hasExpectedMembership = profile.accountRole === 'student'
+      ? !nextMembership || nextMembership.membershipRole === 'student'
+      : Boolean(nextMembership && ['owner', 'trainer'].includes(nextMembership.membershipRole))
+    if (!hasExpectedMembership) throw new Error('Não foi possível atualizar o vínculo desta conta.')
+    setMembership(nextMembership)
+    return nextMembership
+  }, [profile, session])
 
   const signOut = useCallback(async () => {
     setLoading(true)
@@ -227,6 +291,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     requestVersion.current += 1
     setSession(null)
     setProfile(null)
+    setMembership(null)
     setRecoveryMode(false)
     setAccessError(null)
     setLoading(false)
@@ -258,6 +323,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     loading,
     session,
     profile,
+    membership,
     isDemo,
     recoveryMode,
     accessError,
@@ -266,10 +332,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     resendConfirmation,
     requestPasswordReset,
     updatePassword,
+    refreshMembership,
     signOut,
     enterDemo,
     leaveDemo,
-  }), [accessError, isDemo, loading, profile, recoveryMode, requestPasswordReset, resendConfirmation, session, signIn, signOut, signUp, updatePassword, enterDemo, leaveDemo])
+  }), [accessError, isDemo, loading, membership, profile, recoveryMode, requestPasswordReset, resendConfirmation, refreshMembership, session, signIn, signOut, signUp, updatePassword, enterDemo, leaveDemo])
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }

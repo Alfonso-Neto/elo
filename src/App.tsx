@@ -6,6 +6,8 @@ import {
 import { Brand, Button, Drawer, Eyebrow, Modal } from './components'
 import { AuthLoadingScreen, AuthPage } from './auth/AuthPage'
 import { AuthProvider, useAuth } from './auth/auth-context'
+import { StudentEnrollmentOnboarding } from './onboarding/EnrollmentScreens'
+import { resolveEnrollmentAccess } from './onboarding/enrollment-access'
 import { PrototypeProvider, usePrototype } from './prototype-context'
 import {
   CopilotScreen, FormBuilderScreen, FormsScreen, MessagesScreen, ScheduleScreen, StudentDetailScreen,
@@ -47,13 +49,17 @@ function RoleSwitch({ compact = false }: { compact?: boolean }) {
 
 function Sidebar() {
   const { role, page, navigate, painReports, messages, setSelectedStudentId, resetPrototype } = usePrototype()
-  const { isDemo, profile, signOut, leaveDemo } = useAuth()
+  const { isDemo, profile, membership, signOut, leaveDemo } = useAuth()
   const nav = role === 'trainer' ? trainerNav : studentNav
   const openStudents = new Set(painReports.filter((item) => item.status === 'open').map((item) => item.studentId)).size
   const unreadMessages = messages.at(-1)?.sender !== role ? 1 : 0
   const displayName = profile?.displayName ?? (role === 'trainer' ? 'André Lima' : 'Marina Costa')
   const initials = displayName.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join('').toUpperCase()
-  return <aside className="sidebar"><Brand /><div className="workspace-label"><span>{profile ? (role === 'trainer' ? 'SEU ESPAÇO' : displayName.toUpperCase()) : role === 'trainer' ? 'STUDIO ANDRÉ' : 'MARINA COSTA'}</span><small>{profile ? 'Conta de homologação' : role === 'trainer' ? '28 alunos ativos' : 'Acompanhamento ativo'}</small></div><nav aria-label="Navegação principal">{nav.map(({ page: target, label, icon: Icon }) => <button key={target} className={page === target || (target === 'students' && page === 'student-detail') || (target === 'forms' && page === 'form-builder') ? 'nav-item active' : 'nav-item'} onClick={() => { if (target === 'copilot' || target === 'builder' || target === 'forms') setSelectedStudentId('marina'); if (target !== 'more') navigate(target) }} aria-label={label} title={label} aria-current={page === target ? 'page' : undefined}><Icon size={19} strokeWidth={1.8} /><span>{label}</span>{label === 'Alunos' && openStudents > 0 && <b>{openStudents}</b>}{label === 'Conversas' && unreadMessages > 0 && <b>{unreadMessages}</b>}</button>)}</nav><div className="sidebar-bottom">{isDemo ? <><RoleSwitch /><button className="reset-button" onClick={resetPrototype}><RotateCcw size={15} /> Reiniciar demonstração</button><button className="account-action" onClick={leaveDemo}><LogOut size={15} /> Sair da demonstração</button></> : <button className="account-action" onClick={() => void signOut()}><LogOut size={15} /> Sair da conta</button>}<div className="sidebar-profile"><span className="avatar">{initials}</span><div><strong>{displayName}</strong><small>{role === 'trainer' ? 'Professor · conta ativa' : 'Aluno · conta ativa'}</small></div><MoreHorizontal size={17} /></div></div></aside>
+  const workspaceTitle = profile ? (membership?.workspaceName ?? 'SEU ESPAÇO') : role === 'trainer' ? 'STUDIO ANDRÉ' : 'MARINA COSTA'
+  const workspaceDetail = profile
+    ? role === 'student' ? `Com ${membership?.trainerName ?? 'seu professor'}` : 'Conta de homologação'
+    : role === 'trainer' ? '28 alunos ativos' : 'Acompanhamento ativo'
+  return <aside className="sidebar"><Brand /><div className="workspace-label"><span>{workspaceTitle.toUpperCase()}</span><small>{workspaceDetail}</small></div><nav aria-label="Navegação principal">{nav.map(({ page: target, label, icon: Icon }) => <button key={target} className={page === target || (target === 'students' && page === 'student-detail') || (target === 'forms' && page === 'form-builder') ? 'nav-item active' : 'nav-item'} onClick={() => { if (target === 'copilot' || target === 'builder' || target === 'forms') setSelectedStudentId('marina'); if (target !== 'more') navigate(target) }} aria-label={label} title={label} aria-current={page === target ? 'page' : undefined}><Icon size={19} strokeWidth={1.8} /><span>{label}</span>{label === 'Alunos' && openStudents > 0 && <b>{openStudents}</b>}{label === 'Conversas' && unreadMessages > 0 && <b>{unreadMessages}</b>}</button>)}</nav><div className="sidebar-bottom">{isDemo ? <><RoleSwitch /><button className="reset-button" onClick={resetPrototype}><RotateCcw size={15} /> Reiniciar demonstração</button><button className="account-action" onClick={leaveDemo}><LogOut size={15} /> Sair da demonstração</button></> : <button className="account-action" onClick={() => void signOut()}><LogOut size={15} /> Sair da conta</button>}<div className="sidebar-profile"><span className="avatar">{initials}</span><div><strong>{displayName}</strong><small>{role === 'trainer' ? 'Professor · conta ativa' : 'Aluno · conta ativa'}</small></div><MoreHorizontal size={17} /></div></div></aside>
 }
 
 function Topbar() {
@@ -117,10 +123,13 @@ function AppContent() {
 }
 
 function AppGate() {
-  const { loading, session, profile, isDemo } = useAuth()
+  const { loading, session, profile, membership, isDemo } = useAuth()
   const resetRoute = window.location.hash.replace('#/', '') === 'redefinir-senha'
   if (loading) return <AuthLoadingScreen />
   if (!isDemo && (resetRoute || !session || !profile)) return <AuthPage />
+  const access = resolveEnrollmentAccess({ isDemo, role: profile?.accountRole ?? null, membership })
+  if (access === 'student-onboarding') return <StudentEnrollmentOnboarding />
+  if (access === 'blocked') return <AuthPage />
   return <PrototypeProvider lockedRole={isDemo ? undefined : profile?.accountRole}><AppContent /></PrototypeProvider>
 }
 

@@ -7,6 +7,8 @@ import {
 import { exerciseLibrary, formTemplateQuestions, formTemplates, generalForm, students } from './data'
 import { BackButton, Button, Drawer, Eyebrow, Modal, MovementDemo, PageIntro, Progress, SectionTitle, Segmented, SuccessState } from './components'
 import { usePrototype } from './prototype-context'
+import { useAuth } from './auth/auth-context'
+import { TrainerStudentsEnrollment } from './onboarding/EnrollmentScreens'
 import type { Exercise, FormQuestion, QuestionType, Session, Student } from './types'
 
 export function TrainerDashboard() {
@@ -42,6 +44,11 @@ export function TrainerDashboard() {
 }
 
 export function StudentsScreen() {
+  const { isDemo } = useAuth()
+  return isDemo ? <DemoStudentsScreen /> : <TrainerStudentsEnrollment />
+}
+
+function DemoStudentsScreen() {
   const { navigate, selectedStudentId, setSelectedStudentId, painReports } = usePrototype()
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState('all')
