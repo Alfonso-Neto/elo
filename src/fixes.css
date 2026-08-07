@@ -30,3 +30,312 @@ body{overflow-x:hidden}
   .mobile-conversation-picker span{color:var(--muted);font:600 8px 'Roboto Mono'}
   .mobile-conversation-picker select{min-width:0;flex:1;height:42px;padding:0 10px;border:1px solid var(--line);background:var(--white)}
 }
+
+/* Elo reference theme ----------------------------------------------------- */
+h1,h2,h3,h4,.brand,.page-intro h2,.hero-copy h2,.student-welcome h2{
+  font-family:var(--disp)!important;
+}
+.eyebrow,kbd,time,.num,.tag,.workspace-label span,.section-title>span,
+.template-grid footer,.table-head,.exercise-order,.date-tile,.week-switcher strong,
+.metric-strip strong,.macro-strip strong,.workout-timer strong{
+  font-family:var(--mono)!important;
+}
+
+button,input,textarea,select{font-family:var(--body)}
+button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible,a:focus-visible{
+  outline-color:var(--pine-bright);
+}
+.role-student{--blue:var(--apricot);--lime:var(--pine-bright)}
+
+.brand{color:var(--ink);letter-spacing:-.045em}
+.brand-mark i{border-color:var(--pine-bright)}
+.brand-mark i:nth-child(2){border-color:var(--apricot)}
+.person-avatar,.avatar{border-radius:14px}
+
+.sidebar{
+  inset:16px auto 16px 16px;
+  width:236px;
+  padding:24px 16px 16px;
+  border:1px solid rgba(224,228,219,.92);
+  border-radius:28px;
+  background:rgba(255,255,255,.88);
+  color:var(--ink);
+  box-shadow:0 18px 48px -26px rgba(20,32,27,.4);
+  backdrop-filter:blur(18px);
+}
+.workspace-label{margin-top:28px;padding:13px 12px;border-color:var(--line);border-radius:16px;background:#f4f6f1}
+.workspace-label span{color:var(--pine)}
+.workspace-label small{color:var(--ink-soft)}
+.sidebar nav{gap:5px;margin-top:16px}
+.nav-item{min-height:46px;border-radius:14px;color:var(--ink-soft)}
+.nav-item:hover{color:var(--pine);background:#f0f7f3}
+.nav-item.active{background:var(--pine);color:#fff}
+.role-student .nav-item.active{background:var(--apricot);color:#fff}
+.nav-item b,.nav-item.active b{background:var(--apricot);color:#fff}
+.role-student .nav-item b,.role-student .nav-item.active b{background:var(--pine);color:#fff}
+.sidebar-bottom .role-switch{padding:4px;border-color:var(--line);border-radius:999px;background:#f4f6f1}
+.sidebar-bottom .role-switch button{min-height:38px;border-radius:999px;color:var(--ink-soft)}
+.sidebar-bottom .role-switch button.active{background:var(--pine);color:#fff}
+.role-student .sidebar-bottom .role-switch button.active{background:var(--apricot);color:#fff}
+.reset-button{color:var(--ink-soft)}
+.reset-button:hover{color:var(--pine)}
+.sidebar-profile{border-color:var(--line)}
+.sidebar-profile .avatar{background:#e7efe9;color:var(--pine)}
+.sidebar-profile small{color:var(--ink-soft)}
+
+.main-shell{margin-left:var(--sidebar)}
+.topbar{
+  height:88px;
+  border-bottom-color:rgba(224,228,219,.88);
+  background:rgba(238,241,234,.76);
+  backdrop-filter:blur(18px);
+}
+.topbar-title h1{font-weight:700;letter-spacing:-.02em}
+.top-search,.icon-button,.search-field,.segmented{border-radius:14px;background:rgba(255,255,255,.88)}
+.top-search:hover,.icon-button:hover{border-color:#c7d3ca;background:#fff}
+.role-switch.compact{border-radius:999px;background:#fff}
+.role-switch.compact button{border-radius:999px}
+.role-switch.compact button.active{background:var(--pine);color:#fff}
+.role-student .role-switch.compact button.active{background:var(--apricot);color:#fff}
+
+.button{border-radius:14px;border-color:var(--ink);background:var(--ink);font-size:13px}
+.button:hover{border-color:var(--pine-deep);background:var(--pine-deep)}
+.button.secondary{border-color:var(--line);background:#fff}
+.button.secondary:hover{border-color:#c7d3ca;background:#f4f6f1}
+.button.ghost:hover{background:#e7efe9}
+.role-student .button:not(.secondary):not(.ghost):not(.danger){border-color:var(--apricot);background:var(--apricot)}
+.role-student .button:not(.secondary):not(.ghost):not(.danger):hover{border-color:var(--apricot-deep);background:var(--apricot-deep)}
+.icon-button,.back-button,.text-link{border-radius:14px}
+.tag{border-radius:999px}
+.tag.blue{border-color:#a9d3be;color:var(--pine)}
+.role-student .tag.blue{border-color:#f3bda7;color:var(--apricot-deep)}
+
+.page-intro{min-height:238px;border-bottom-color:var(--line)}
+.page-intro h2{font-weight:800;letter-spacing:-.035em}
+.section-title>span{border-color:var(--line);border-radius:10px;background:rgba(255,255,255,.62);color:var(--pine)}
+.role-student .section-title>span{color:var(--apricot-deep)}
+.section-title h3{font-weight:700}
+
+:where(.surface-card,.agenda-card,.copilot-card,.metric-strip,.signal-cards article,
+.student-profile-head,.profile-metrics,.option,.review-note,.field-grid label,.note-field,
+.template-grid button,.question-card,.availability-card,.messenger,.today-workout,
+.today-side>button,.continuity-card,.flow-question,.absence-card,.nutrition-author,
+.macro-strip,.water-card,.student-schedule-list article,.consent-card,.fill-form fieldset,
+.form-meta>div,.student-select,.workout-timer,.legal-note){
+  border-radius:20px;
+}
+:where(.metric-strip,.profile-metrics,.messenger,.macro-strip){overflow:hidden}
+:where(.field-grid label,.note-field,.question-card,.availability-card,.today-side>button,
+.continuity-card,.flow-question,.absence-card,.nutrition-author,.water-card,
+.student-schedule-list article,.fill-form fieldset,.form-meta>div){background:rgba(255,255,255,.9)}
+
+.metric-strip,.profile-metrics,.macro-strip{border-color:var(--line);background:rgba(255,255,255,.9)}
+.attention-row,.student-row,.assignment-list button,.student-task-list button,.help-list button{
+  border-radius:14px;
+}
+.attention-row:hover,.student-row:hover,.assignment-list button:hover,.student-task-list button:hover,.help-list button:hover{
+  background:rgba(255,255,255,.82);
+}
+.signal-avatar,.today-icon,.assistant-choice-icon,.exercise-glyph,.quick-icon,.task-check{
+  border-radius:12px;
+}
+.signal-avatar.danger,.today-icon.danger,.assistant-choice-icon.danger{background:#fbe4de;color:#b13f2b}
+.signal-avatar.warning{background:#fbeede;color:#a56a15}
+.signal-avatar.blue,.today-icon.blue,.assistant-choice-icon.blue{background:#e7efe9;color:var(--pine)}
+
+.copilot-card{
+  border:0;
+  border-radius:24px;
+  background:linear-gradient(160deg,#1f6b4d 0%,var(--pine-deep) 90%);
+  box-shadow:0 18px 38px -24px rgba(18,63,46,.7);
+}
+.copilot-card .eyebrow,.copilot-icon,.card-action{color:var(--pine-bright)}
+.copilot-icon{border-color:rgba(255,255,255,.22);border-radius:14px;background:rgba(255,255,255,.08)}
+.option{border-radius:18px;background:rgba(255,255,255,.48)}
+.option:hover{border-color:#c7d3ca;background:#fff}
+.option.selected{border-color:var(--pine);background:var(--pine-deep)}
+.binary-options button,.flow-options button,.answer-options button,.mood-options button,
+.question-types button,.scale-preview span,.choice-preview span{border-radius:12px}
+.binary-options button,.flow-options button,.answer-options button,.mood-options button,
+.question-types button,.date-pills button{min-height:44px}
+.question-types button.active{border-color:var(--pine);background:var(--pine);color:#fff}
+.role-student .flow-options button:hover{border-color:var(--apricot);color:var(--apricot-deep)}
+.role-student .pain-scale button.active,.role-student .answer-scale button.active,
+.role-student .answer-options button.active,.role-student .mood-options button.active{
+  border-color:var(--apricot);
+  background:var(--apricot);
+  color:#fff;
+}
+
+.today-workout{
+  border-radius:24px;
+  background:linear-gradient(160deg,var(--apricot),var(--apricot-deep));
+  box-shadow:0 18px 38px -24px rgba(213,95,52,.62);
+}
+.today-workout .eyebrow,.today-workout>div:nth-child(2)>span{color:#fff}
+.workout-orbit{border-color:rgba(255,255,255,.28)}
+.workout-orbit i{background:conic-gradient(#fff var(--progress),rgba(255,255,255,.16) 0)}
+.today-side>button{background:rgba(255,255,255,.9)}
+.student-exercise-list article,.meal-list article{border-radius:14px}
+.meal-list article{grid-template-columns:50px 44px 1fr}
+.complete-exercise,.meal-list button,.water-card>div button{width:44px;height:44px;border-radius:12px}
+.water-card>div{grid-template-columns:44px 1fr 44px}
+
+.assistant-choices>button{border-radius:20px;background:rgba(255,255,255,.48)}
+.assistant-choices>button:hover{border-color:#c7d3ca;background:#fff}
+.assistant-message{border-radius:18px;border-top-left-radius:6px;background:linear-gradient(155deg,var(--pine),var(--pine-deep))}
+.assistant-answer{border-radius:16px;border-bottom-right-radius:5px;background:var(--apricot)}
+.flow-question{border-color:var(--line)}
+.flow-options button:hover{border-color:var(--apricot);color:var(--apricot-deep)}
+
+input:not([type='checkbox']):not([type='range']),textarea,select{border-radius:12px}
+.form-stack input,.form-stack select,.form-stack textarea,.message-composer textarea,
+.feedback-form textarea,.fill-form fieldset>input,.fill-form fieldset>textarea{
+  border-radius:12px;
+  background:#fff;
+}
+.exercise-actions>button:not(.button),.question-actions button{width:44px;height:44px;border-radius:12px}
+.week-switcher,.date-pills button{border-radius:16px}
+.week-switcher{overflow:hidden}
+.week-switcher button.active,.date-pills button.active{background:var(--pine);color:#fff}
+.role-student .week-switcher button.active,.role-student .date-pills button.active{background:var(--apricot)}
+.student-schedule-list article{background:rgba(255,255,255,.9)}
+.date-tile{border-radius:15px;background:var(--pine)}
+.role-student .date-tile{background:var(--apricot)}
+.availability-card{background:rgba(255,255,255,.9)}
+
+.messenger{border-radius:24px;background:rgba(255,255,255,.88)}
+.conversation-list>button{border-radius:14px}
+.conversation-list>button.active{background:var(--pine)}
+.role-student .conversation-list>button.active{background:var(--apricot)}
+.message p{border-radius:16px;border-bottom-left-radius:5px;background:#f4f6f1}
+.message.mine p{border-bottom-left-radius:16px;border-bottom-right-radius:5px;background:var(--pine)}
+.role-student .message.mine p{background:var(--apricot)}
+.message-composer button{border-radius:14px;background:var(--pine);color:#fff}
+.role-student .message-composer button{background:var(--apricot)}
+
+.modal{border-radius:28px;background:var(--paper)}
+.drawer{border-radius:28px 0 0 28px;background:var(--paper)}
+.toast{border:0;border-radius:18px;background:var(--ink)}
+.toast>span{background:var(--pine-bright)}
+.empty-state{border-radius:20px;background:rgba(255,255,255,.34)}
+.form-submit,.builder-savebar{border-radius:18px 18px 0 0;background:rgba(255,255,255,.88)}
+.floating-copilot{border-radius:20px;background:linear-gradient(155deg,var(--pine),var(--pine-deep));color:#fff;box-shadow:0 12px 24px -6px rgba(27,94,67,.5)}
+
+/* The model gallery follows the partner prototype: two columns and a fully
+   in-flow card, so the question count can never collide with the labels. */
+.template-grid{width:min(820px,100%);grid-template-columns:repeat(2,minmax(0,1fr));gap:11px}
+.template-grid button{
+  position:relative;
+  min-height:0;
+  display:grid;
+  grid-template-columns:1fr auto;
+  grid-template-rows:auto auto auto auto;
+  align-content:start;
+  gap:0;
+  padding:14px;
+  border-color:var(--line);
+  border-radius:18px;
+  background:rgba(255,255,255,.9);
+}
+.template-grid button:hover{border-color:#c7d3ca;background:#fff;transform:translateY(-1px)}
+.template-grid button:active{transform:scale(.985)}
+.template-grid>button>span{
+  position:static;
+  grid-column:2;
+  grid-row:1;
+  align-self:start;
+  color:#aab8af;
+  font:700 10px var(--mono);
+}
+.template-grid>button>svg{
+  grid-column:1;
+  grid-row:1;
+  width:38px;
+  height:38px;
+  margin:0 0 10px;
+  padding:9px;
+  border-radius:11px;
+  background:#e7efe9;
+  color:var(--pine);
+}
+.template-grid h3{grid-column:1/-1;grid-row:2;margin:0;font:600 13.5px/1.25 var(--body)!important}
+.template-grid p{grid-column:1/-1;grid-row:3;margin:4px 0 0;min-height:0;color:var(--ink-soft);font-size:11px;line-height:1.4}
+.template-grid footer{
+  position:static;
+  grid-column:1/-1;
+  grid-row:4;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  margin-top:10px;
+  padding-top:9px;
+  border-top:1px solid var(--line);
+  color:var(--pine);
+  font-size:10px;
+  font-weight:700;
+}
+.template-grid footer svg{width:15px;height:15px;margin:0;padding:0;border-radius:0;background:transparent;color:currentColor}
+
+@media (min-width:1041px){
+  :root{--sidebar:268px}
+}
+
+@media (min-width:761px) and (max-width:1040px){
+  :root{--sidebar:104px}
+  .sidebar{inset:12px auto 12px 12px;width:76px;padding-inline:10px;border-radius:24px}
+  .sidebar nav{margin-top:34px}
+  .nav-item{border-radius:14px}
+}
+
+@media(max-width:760px){
+  body{padding-bottom:calc(98px + env(safe-area-inset-bottom))}
+  .main-shell{margin-left:0}
+  .topbar{height:64px;margin:8px 12px 0;padding:0 14px;border:1px solid rgba(224,228,219,.88);border-radius:20px;background:rgba(255,255,255,.76)}
+  .top-actions>.icon-button{background:transparent}
+  main{padding:0 16px 28px}
+  .page-intro{padding:30px 0 24px}
+  .page-intro h2{font-size:36px}
+  .modal{border-radius:28px 28px 0 0}
+  .drawer{border-radius:28px 28px 0 0}
+  .bottom-nav{
+    inset:auto 12px calc(10px + env(safe-area-inset-bottom));
+    height:70px;
+    padding:6px 5px;
+    overflow:visible;
+    border:1px solid rgba(224,228,219,.92);
+    border-radius:24px;
+    background:rgba(255,255,255,.86);
+    box-shadow:0 12px 30px -10px rgba(20,32,27,.28);
+    backdrop-filter:blur(18px);
+  }
+  .bottom-nav button{position:relative;min-height:54px;border-radius:15px;color:var(--ink-soft)}
+  .bottom-nav button.active{color:var(--pine)}
+  .role-student .bottom-nav button.active{color:var(--apricot-deep)}
+  .bottom-nav button:nth-child(3){
+    align-self:center;
+    justify-self:center;
+    width:58px;
+    min-height:58px;
+    border-radius:20px;
+    background:linear-gradient(155deg,var(--pine),var(--pine-deep));
+    color:#fff;
+    box-shadow:0 12px 24px -6px rgba(27,94,67,.5);
+    transform:translateY(-14px);
+  }
+  .role-student .bottom-nav button:nth-child(3){background:linear-gradient(155deg,var(--apricot),var(--apricot-deep));color:#fff;box-shadow:0 12px 24px -6px rgba(213,95,52,.45)}
+  .bottom-nav button:nth-child(3).active{color:#fff}
+  .bottom-nav button:nth-child(3) small{font-weight:700}
+  .toast{bottom:96px}
+  .builder-savebar,.form-submit{bottom:92px}
+  .floating-copilot{bottom:102px}
+  .messenger{margin-inline:0;border-inline:1px solid var(--line);border-radius:22px}
+  .workout-timer{border-radius:18px;background:rgba(255,255,255,.9)}
+  .student-exercise-list article{grid-template-columns:44px 27px 1fr}
+  .template-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+
+@media(max-width:350px){
+  .template-grid{gap:8px}
+  .template-grid button{padding:12px}
+}
