@@ -11,6 +11,7 @@ export const supabase = publicSupabaseConfig.configured
       auth: {
         autoRefreshToken: true,
         detectSessionInUrl: true,
+        flowType: 'pkce',
         persistSession: true,
         storageKey: 'elo-auth',
       },

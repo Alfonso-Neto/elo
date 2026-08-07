@@ -4,7 +4,7 @@ import { App } from '../App'
 
 beforeEach(() => {
   localStorage.clear()
-  window.history.replaceState(null, '', '/#/dashboard')
+  window.history.replaceState(null, '', '/?demo=1#/dashboard')
 })
 
 describe('Elo validation prototype', () => {
@@ -114,7 +114,7 @@ describe('Elo validation prototype', () => {
   })
 
   it('normalizes a student entry URL to the student home', () => {
-    window.history.replaceState(null, '', '/?role=student')
+    window.history.replaceState(null, '', '/?demo=1&role=student')
     render(<App />)
     expect(screen.getByRole('heading', { name: /Oi, Marina/i })).toBeInTheDocument()
   })

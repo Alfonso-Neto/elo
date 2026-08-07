@@ -71,14 +71,16 @@ const readStorageEvent = <T,>(value: string | null, fallback: T): T => {
 const trainerOnlyPages: Page[] = ['dashboard', 'students', 'student-detail', 'copilot', 'builder', 'forms', 'form-builder']
 const studentOnlyPages: Page[] = ['today', 'workout', 'assistant', 'nutrition', 'student-form']
 const isPage = (value: string): value is Page => [...trainerOnlyPages, ...studentOnlyPages, 'schedule', 'messages'].includes(value as Page)
+const homeForRole = (role: Role): Page => role === 'trainer' ? 'dashboard' : 'today'
+const canAccessPage = (role: Role, page: Page) => page === 'schedule' || page === 'messages' || (role === 'trainer' ? trainerOnlyPages.includes(page) : studentOnlyPages.includes(page))
 
-export function PrototypeProvider({ children }: { children: ReactNode }) {
+export function PrototypeProvider({ children, lockedRole }: { children: ReactNode; lockedRole?: Role }) {
   const requestedRole = new URLSearchParams(window.location.search).get('role')
-  const initialRole: Role = requestedRole === 'student' || requestedRole === 'trainer' ? requestedRole : readLocal('elo-role', 'trainer')
+  const initialRole: Role = lockedRole ?? (requestedRole === 'student' || requestedRole === 'trainer' ? requestedRole : readLocal('elo-role', 'trainer'))
   const requestedPage = window.location.hash.replace('#/', '')
-  const initialPage: Page = isPage(requestedPage) && (requestedPage === 'schedule' || requestedPage === 'messages' || (initialRole === 'trainer' ? trainerOnlyPages.includes(requestedPage) : studentOnlyPages.includes(requestedPage)))
+  const initialPage: Page = isPage(requestedPage) && canAccessPage(initialRole, requestedPage)
     ? requestedPage
-    : initialRole === 'trainer' ? 'dashboard' : 'today'
+    : homeForRole(initialRole)
   const [role, setRole] = useState<Role>(initialRole)
   const [page, setPage] = useState<Page>(initialPage)
   const [workout, setWorkout] = useState<Exercise[]>(() => readLocal('elo-workout', initialWorkout))
@@ -104,7 +106,12 @@ export function PrototypeProvider({ children }: { children: ReactNode }) {
   const [selectedStudentId, setSelectedStudentId] = useState('marina')
   const [toast, setToast] = useState<Toast>(null)
 
-  useEffect(() => { localStorage.setItem('elo-role', JSON.stringify(role)) }, [role])
+  useEffect(() => { if (!lockedRole) localStorage.setItem('elo-role', JSON.stringify(role)) }, [lockedRole, role])
+  useEffect(() => {
+    if (!lockedRole) return
+    setRole(lockedRole)
+    setPage((current) => canAccessPage(lockedRole, current) ? current : homeForRole(lockedRole))
+  }, [lockedRole])
   useEffect(() => { localStorage.setItem('elo-workout', JSON.stringify(workout)) }, [workout])
   useEffect(() => { localStorage.setItem('elo-workout-name', JSON.stringify(workoutName)) }, [workoutName])
   useEffect(() => { localStorage.setItem('elo-published-workout', JSON.stringify(studentWorkout)) }, [studentWorkout])
@@ -159,6 +166,18 @@ export function PrototypeProvider({ children }: { children: ReactNode }) {
     const onHash = () => {
       const raw = window.location.hash.replace('#/', '')
       if (!isPage(raw)) return
+      if (lockedRole) {
+        if (!canAccessPage(lockedRole, raw)) {
+          const home = homeForRole(lockedRole)
+          setRole(lockedRole)
+          setPage(home)
+          window.history.replaceState(null, '', `#/${home}`)
+          return
+        }
+        setRole(lockedRole)
+        setPage(raw)
+        return
+      }
       if (trainerOnlyPages.includes(raw)) setRole('trainer')
       if (studentOnlyPages.includes(raw)) setRole('student')
       setPage(raw)
@@ -166,16 +185,21 @@ export function PrototypeProvider({ children }: { children: ReactNode }) {
     window.addEventListener('hashchange', onHash)
     window.addEventListener('popstate', onHash)
     return () => { window.removeEventListener('hashchange', onHash); window.removeEventListener('popstate', onHash) }
-  }, [])
+  }, [lockedRole])
 
   const notify = (title: string, message: string) => setToast({ title, message })
   const navigate = (next: Page) => {
-    setPage(next)
-    window.history.pushState(null, '', `#/${next}`)
+    const target = lockedRole && !canAccessPage(lockedRole, next) ? homeForRole(lockedRole) : next
+    setPage(target)
+    window.history.pushState(null, '', `#/${target}`)
     document.getElementById('main-content')?.focus()
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
-  const switchRole = (next: Role) => { setRole(next); navigate(next === 'trainer' ? 'dashboard' : 'today') }
+  const switchRole = (next: Role) => {
+    if (lockedRole) return
+    setRole(next)
+    navigate(homeForRole(next))
+  }
   const addPainReport = (report: Omit<PainReport, 'id' | 'createdAt' | 'status'>) => {
     setPainReports((current) => [{ ...report, id: `pain-${Date.now()}`, createdAt: 'Agora', status: 'open' }, ...current])
     notify('Relato enviado ao treinador', 'Local, momento e intensidade foram registrados com segurança.')
@@ -212,11 +236,13 @@ export function PrototypeProvider({ children }: { children: ReactNode }) {
     notify('Observação salva', 'A nota privada foi anexada à linha de sinais do aluno.')
   }
   const resetPrototype = () => {
-    Object.keys(localStorage).filter((key) => key.startsWith('elo-')).forEach((key) => localStorage.removeItem(key))
+    Object.keys(localStorage).filter((key) => key.startsWith('elo-') && key !== 'elo-auth').forEach((key) => localStorage.removeItem(key))
     setWorkout(initialWorkout); setWorkoutName('Treino A · Inferiores conscientes'); setStudentWorkout(initialWorkout); setStudentWorkoutName('Treino A · Inferiores conscientes'); setPainReports(initialPainReports)
     setSessions(initialSessions); setMessages(initialMessages); setFormQuestions(generalForm); setPublishedFormQuestions(generalForm); setFormTitle('Anamnese · contexto inicial'); setPublishedFormTitle('Anamnese geral'); setFormAnswers({}); setCompletedExercises([])
-    setCompletedMeals([]); setWater(3); setFormSubmitted(false); setFormSent(true); setWorkoutSent(false); setWorkoutFeedback(null); setStudentNotes([]); setRole('trainer'); setPage('dashboard')
-    window.history.replaceState(null, '', '#/dashboard'); notify('Protótipo reiniciado', 'Todos os dados voltaram ao cenário inicial.')
+    const resetRole = lockedRole ?? 'trainer'
+    const resetPage = homeForRole(resetRole)
+    setCompletedMeals([]); setWater(3); setFormSubmitted(false); setFormSent(true); setWorkoutSent(false); setWorkoutFeedback(null); setStudentNotes([]); setRole(resetRole); setPage(resetPage)
+    window.history.replaceState(null, '', `#/${resetPage}`); notify('Protótipo reiniciado', 'Todos os dados voltaram ao cenário inicial.')
   }
 
   const value = useMemo<PrototypeContextValue>(() => ({
@@ -224,7 +250,7 @@ export function PrototypeProvider({ children }: { children: ReactNode }) {
     completedMeals, water, formSubmitted, formSent, workoutSent, workoutFeedback, studentNotes, selectedStudentId, toast, navigate, switchRole,
     setWorkout, setWorkoutName, addPainReport, reviewPainReports, setSessions, addMessage, setFormQuestions, setFormTitle,
     setCompletedExercises, toggleMeal, setWater, submitForm, sendWorkout, sendForm, submitWorkoutFeedback, addStudentNote, setSelectedStudentId, notify, resetPrototype,
-  }), [role, page, workout, workoutName, studentWorkout, studentWorkoutName, painReports, sessions, messages, formQuestions, publishedFormQuestions, formTitle, publishedFormTitle, formAnswers, completedExercises, completedMeals, water, formSubmitted, formSent, workoutSent, workoutFeedback, studentNotes, selectedStudentId, toast])
+  }), [role, page, workout, workoutName, studentWorkout, studentWorkoutName, painReports, sessions, messages, formQuestions, publishedFormQuestions, formTitle, publishedFormTitle, formAnswers, completedExercises, completedMeals, water, formSubmitted, formSent, workoutSent, workoutFeedback, studentNotes, selectedStudentId, toast, lockedRole])
 
   return <PrototypeContext.Provider value={value}>{children}</PrototypeContext.Provider>
 }
