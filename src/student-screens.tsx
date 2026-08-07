@@ -9,6 +9,7 @@ import { BackButton, Button, Drawer, Eyebrow, Modal, MovementDemo, PageIntro, Pr
 import { usePrototype } from './prototype-context'
 import type { Exercise, FormQuestion } from './types'
 import { assessPainSafety, type PainRedFlag } from './assistant/pain-safety'
+import { createAssistantService, type AssistantProposal } from './assistant/assistant-service'
 import { useAuth } from './auth/auth-context'
 import { createIdempotencyKey, createSignalService } from './signals'
 import { mapPainIntakeSelection, submitConsentedPainIntake, type PendingPainIntake } from './live/pain-intake'
@@ -65,7 +66,7 @@ const redFlagOptions: { value: PainRedFlag | 'none'; label: string }[] = [
 
 export function StudentAssistantScreen() {
   const { navigate, addPainReport, studentWorkout: workout, setSessions, notify } = usePrototype()
-  const { isDemo, membership } = useAuth()
+  const { isDemo, membership, profile } = useAuth()
   const trainerFirstName = isDemo ? 'André' : membership?.trainerName.split(/\s+/)[0] ?? 'seu professor'
   const [mode, setMode] = useState<'home' | 'pain' | 'help' | 'absence'>('home')
   const [step, setStep] = useState<PainStep>('intro')
@@ -82,10 +83,33 @@ export function StudentAssistantScreen() {
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState('')
   const [pendingIntake, setPendingIntake] = useState<PendingPainIntake | null>(null)
-  const commandKeys = useRef<{ consent: string; report: string } | null>(null)
+  const commandKeys = useRef<{ consent: string; report: string; assistant: string } | null>(null)
+  const [savedReportId, setSavedReportId] = useState('')
+  const [assistantPhase, setAssistantPhase] = useState<'idle' | 'loading' | 'processing' | 'complete' | 'unavailable'>('idle')
+  const [assistantProposal, setAssistantProposal] = useState<AssistantProposal | null>(null)
   const [helpExercise, setHelpExercise] = useState<Exercise | null>(null)
   const [helpPlaying, setHelpPlaying] = useState(true)
   const assessment = assessPainSafety(intensity, redFlags)
+  const loadPainProposal = async (painReportId: string) => {
+    if (isDemo || !membership || !profile || !commandKeys.current) return
+    setAssistantPhase('loading')
+    try {
+      const result = await createAssistantService().requestPainTriage({
+        workspaceId: membership.workspaceId,
+        studentId: profile.id,
+        painReportId,
+        idempotencyKey: commandKeys.current.assistant,
+      })
+      if (result.state === 'processing') {
+        setAssistantPhase('processing')
+        return
+      }
+      setAssistantProposal(result.proposal)
+      setAssistantPhase('complete')
+    } catch {
+      setAssistantPhase('unavailable')
+    }
+  }
   const submitPain = async () => {
     if (!consent) { setConsentError(true); return }
     if (isDemo) {
@@ -97,6 +121,7 @@ export function StudentAssistantScreen() {
     const keys = commandKeys.current ?? {
       consent: createIdempotencyKey('consent-granted'),
       report: createIdempotencyKey('pain-report'),
+      assistant: createIdempotencyKey('assistant-pain'),
     }
     commandKeys.current = keys
     const command = pendingIntake ?? {
@@ -108,16 +133,18 @@ export function StudentAssistantScreen() {
     setSubmitting(true)
     setSubmitError('')
     try {
-      await submitConsentedPainIntake(createSignalService(), command)
+      const painReportId = await submitConsentedPainIntake(createSignalService(), command)
+      setSavedReportId(painReportId)
       setStep('done')
       notify('Relato enviado ao professor', 'Consentimento e sinal foram registrados no espaço vinculado.')
+      void loadPainProposal(painReportId)
     } catch (error) {
       setSubmitError(error instanceof Error ? error.message : 'Não foi possível enviar o relato agora. Tente novamente.')
     } finally {
       setSubmitting(false)
     }
   }
-  const reset = () => { setMode('home'); setStep('intro'); setLocation(''); setMovement(''); setMoment(''); setIntensity(0); setRedFlags([]); setRedFlagsAnswered(false); setNoRedFlags(false); setDetail(''); setConsent(false); setConsentError(false); setSubmitting(false); setSubmitError(''); setPendingIntake(null); commandKeys.current = null }
+  const reset = () => { setMode('home'); setStep('intro'); setLocation(''); setMovement(''); setMoment(''); setIntensity(0); setRedFlags([]); setRedFlagsAnswered(false); setNoRedFlags(false); setDetail(''); setConsent(false); setConsentError(false); setSubmitting(false); setSubmitError(''); setPendingIntake(null); setSavedReportId(''); setAssistantPhase('idle'); setAssistantProposal(null); commandKeys.current = null }
   const editAfterFailure = () => { setSubmitError(''); setPendingIntake(null); commandKeys.current = null; setStep('detail') }
   const toggleRedFlag = (value: PainRedFlag | 'none') => {
     if (value === 'none') { setRedFlags([]); setNoRedFlags(true); setRedFlagsAnswered(true); return }
@@ -145,12 +172,32 @@ export function StudentAssistantScreen() {
       {step === 'red-flags' && <div className="flow-question"><Eyebrow>CHECAGEM DE SEGURANÇA</Eyebrow><h3>Algum destes sinais aconteceu?</h3><p>Marque tudo o que se aplica. Isso não é um diagnóstico; serve para orientar o próximo passo com mais segurança.</p><div className="pain-red-flags">{redFlagOptions.map((option) => { const active = option.value === 'none' ? noRedFlags : redFlags.includes(option.value); return <button type="button" className={active ? 'active' : ''} aria-pressed={active} key={option.value} onClick={() => toggleRedFlag(option.value)}><i>{active && <Check size={13} />}</i>{option.label}</button> })}</div><Button className="wide pain-step-action" disabled={!redFlagsAnswered} onClick={() => setStep('detail')}>Continuar <ArrowRight size={16} /></Button></div>}
       {step === 'detail' && <div className="flow-question"><Eyebrow>DETALHE · OPCIONAL</Eyebrow><h3>Quer acrescentar algo?</h3><p>Uma frase já basta. Não inclua documentos, diagnósticos ou informações que não sejam necessárias para o acompanhamento.</p>{assessment.level !== 'monitor' && <div className={`pain-safety-guidance ${assessment.level === 'stop_and_assess' ? 'stop' : ''}`} role="alert"><AlertTriangle size={19} /><span><strong>{assessment.title}</strong><p>{assessment.guidance}</p></span></div>}<textarea value={detail} onChange={(event) => setDetail(event.target.value.slice(0, 600))} placeholder="Ex.: começou na terceira série e melhorou quando parei..." /><Button className="wide" onClick={() => setStep('review')}>Revisar relato <ArrowRight size={16} /></Button></div>}
       {step === 'review' && <div className="flow-question pain-review"><Eyebrow>SEU ÚLTIMO OLHAR</Eyebrow><h3>Está fiel ao que aconteceu?</h3><div className={`pain-safety-guidance ${assessment.level === 'stop_and_assess' ? 'stop' : ''}`} role="status"><AlertTriangle size={19} /><span><strong>{assessment.title}</strong><p>{assessment.guidance}</p></span></div><dl><div><dt>Região</dt><dd>{location}</dd></div><div><dt>Movimento</dt><dd>{movement}</dd></div><div><dt>Momento</dt><dd>{moment}</dd></div><div><dt>Intensidade</dt><dd>{intensity}/10</dd></div></dl><div className="pain-consent"><p>Este relato contém dado de saúde. Ele será usado somente para acompanhamento, segurança e comunicação com a equipe responsável.</p><label className="switch-label"><input type="checkbox" checked={consent} disabled={submitting || Boolean(pendingIntake)} onChange={(event) => { setConsent(event.target.checked); setConsentError(false) }} /><i /><span>Autorizo salvar e compartilhar este relato com meu professor.</span></label>{consentError && <small role="alert">Registre seu consentimento para enviar o relato.</small>}</div>{submitError && <div className="pain-submit-error" role="alert"><strong>O envio não foi concluído.</strong><p>{submitError}</p><button type="button" onClick={editAfterFailure}>Editar e criar um novo envio</button></div>}<Button className="wide" onClick={() => void submitPain()} disabled={submitting}>{submitting ? <><LoaderCircle className="spin" size={16} /> Registrando com segurança...</> : <><Send size={16} /> {submitError ? 'Tentar novamente' : isDemo ? 'Enviar ao André' : `Enviar para ${trainerFirstName}`}</>}</Button></div>}
-      {step === 'done' && <SuccessState title={isDemo ? 'O André já recebeu' : `${trainerFirstName} já recebeu`} copy={`${location} · ${movement} · intensidade ${intensity}/10. O relato e a orientação de segurança ficaram registrados.`} action={<div className="success-actions"><Button onClick={() => navigate('today')}>Voltar para hoje</Button><Button variant="secondary" onClick={reset}>Novo relato</Button></div>} />}
+      {step === 'done' && <><SuccessState title={isDemo ? 'O André já recebeu' : `${trainerFirstName} já recebeu`} copy={`${location} · ${movement} · intensidade ${intensity}/10. O relato e a orientação de segurança ficaram registrados.`} action={<div className="success-actions"><Button onClick={() => navigate('today')}>Voltar para hoje</Button><Button variant="secondary" onClick={reset}>Novo relato</Button></div>} />{!isDemo && <StudentAssistantInsight phase={assistantPhase} proposal={assistantProposal} onRetry={() => void loadPainProposal(savedReportId)} />}</>}
     </section>}
     {mode === 'help' && <section className="assistant-flow"><BackButton onClick={reset} /><SectionTitle title="Qual exercício gerou dúvida?" copy="A demonstração é um apoio; siga sempre a orientação do seu professor." /><div className="help-list">{workout.map((exercise) => <button key={exercise.id} onClick={() => setHelpExercise(exercise)}><Dumbbell size={17} /><span><strong>{exercise.name}</strong><small>{exercise.sets} × {exercise.reps} · ver execução</small></span><ArrowRight size={16} /></button>)}</div></section>}
     {mode === 'absence' && <section className="assistant-flow"><BackButton onClick={reset} /><div className="absence-card"><Moon size={29} /><Eyebrow>SEM CULPA · COM CONTEXTO</Eyebrow><h3>Quer avisar que hoje não dá?</h3><p>Eu sinalizo sua próxima sessão ao André. Ele poderá reorganizar a semana sem tratar isso como um novo pedido de horário.</p><div><Button onClick={() => { setSessions((items) => { const next = items.find((item) => item.student === 'Marina Costa' && item.status === 'confirmed'); return next ? items.map((item) => item.id === next.id ? { ...item, status: 'reschedule' } : item) : items }); notify('André foi avisado', 'Sua próxima sessão foi marcada para reorganização.'); navigate('today') }}>Avisar e reorganizar</Button><Button variant="ghost" onClick={reset}>Voltar</Button></div></div></section>}
     {helpExercise && <Drawer title={helpExercise.name} eyebrow="EXECUÇÃO E RECADO DO ANDRÉ" onClose={() => setHelpExercise(null)}><MovementDemo name={helpExercise.name} playing={helpPlaying} onToggle={() => setHelpPlaying((value) => !value)} /><div className="exercise-stats">{[['Séries',helpExercise.sets],['Reps',helpExercise.reps],['Carga',helpExercise.load],['Descanso',helpExercise.rest],['Cadência',helpExercise.tempo],['RIR',helpExercise.rir]].map(([label,value]) => <div key={label}><strong>{value}</strong><small>{label}</small></div>)}</div><div className="trainer-note"><Eyebrow>RECADO DO ANDRÉ</Eyebrow><p>{helpExercise.note}</p></div><Button variant="secondary" className="wide" onClick={() => { setHelpExercise(null); setMode('pain'); setStep('location') }}><HeartPulse size={16} /> Relatar dor neste movimento</Button></Drawer>}
   </div>
+}
+
+const urgencyCopy: Record<AssistantProposal['urgency'], string> = {
+  routine: 'ACOMPANHAR',
+  soon: 'REVISAR EM BREVE',
+  urgent: 'ATENÇÃO PRIORITÁRIA',
+  emergency: 'INTERROMPER E BUSCAR AJUDA',
+}
+
+function StudentAssistantInsight({ phase, proposal, onRetry }: { phase: 'idle' | 'loading' | 'processing' | 'complete' | 'unavailable'; proposal: AssistantProposal | null; onRetry: () => void }) {
+  if (phase === 'idle') return null
+  if (phase === 'loading') return <section className="assistant-insight loading" aria-live="polite"><LoaderCircle className="spin" size={20} /><span><Eyebrow>APOIO DO COPILOTO</Eyebrow><strong>Organizando o contexto para revisão...</strong><small>Seu relato já está salvo; esta etapa não bloqueia o envio.</small></span></section>
+  if (phase === 'processing') return <section className="assistant-insight pending" aria-live="polite"><Sparkles size={20} /><span><Eyebrow>ANÁLISE EM PROCESSAMENTO</Eyebrow><strong>O relato já chegou ao professor.</strong><small>O apoio adicional ainda está sendo preparado.</small></span><Button variant="secondary" onClick={onRetry}>Verificar novamente</Button></section>
+  if (phase === 'unavailable' || !proposal) return <section className="assistant-insight unavailable" role="status"><Info size={20} /><span><Eyebrow>RELATO PRESERVADO</Eyebrow><strong>O apoio automático não abriu agora.</strong><small>Isso não afetou o registro nem o aviso ao professor.</small></span><Button variant="secondary" onClick={onRetry}>Tentar novamente</Button></section>
+  return <section className={`assistant-insight proposal urgency-${proposal.urgency}`} aria-live="polite">
+    <header><span><Sparkles size={18} /></span><div><Eyebrow>COPILOTO · PARA REVISÃO HUMANA</Eyebrow><h3>{proposal.summary}</h3></div><b>{urgencyCopy[proposal.urgency]}</b></header>
+    {proposal.red_flags.length > 0 && <div className="assistant-insight-alert"><AlertTriangle size={18} /><span><strong>{proposal.red_flags[0].label}</strong><p>{proposal.red_flags[0].recommended_action}</p></span></div>}
+    {proposal.questions.length > 0 && <div className="assistant-insight-questions"><Eyebrow>PONTOS PARA CONFIRMAR COM SEU PROFESSOR</Eyebrow>{proposal.questions.slice(0, 3).map((question) => <article key={question.id}><span>?</span><div><strong>{question.question}</strong><small>{question.reason}</small></div></article>)}</div>}
+    <footer><Info size={17} aria-hidden="true" /><p>{proposal.disclaimer} <strong>Nenhuma alteração foi aplicada ao seu treino.</strong></p></footer>
+  </section>
 }
 
 function FlowQuestion({ title, copy, children }: { title: string; copy: string; children: React.ReactNode }) {

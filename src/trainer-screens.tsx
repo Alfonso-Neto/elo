@@ -10,6 +10,7 @@ import { usePrototype } from './prototype-context'
 import { useAuth } from './auth/auth-context'
 import { TrainerStudentsEnrollment } from './onboarding/EnrollmentScreens'
 import { LiveTrainerDashboard } from './live/LiveTrainerDashboard'
+import { LiveTrainerCopilot } from './live/LiveTrainerCopilot'
 import type { Exercise, FormQuestion, QuestionType, Session, Student } from './types'
 
 export function TrainerDashboard() {
@@ -98,6 +99,11 @@ const copilotOptions = [
 ]
 
 export function CopilotScreen() {
+  const { isDemo } = useAuth()
+  return isDemo ? <DemoCopilotScreen /> : <LiveTrainerCopilot />
+}
+
+function DemoCopilotScreen() {
   const { navigate, painReports, workout, workoutName, setWorkout, sendWorkout } = usePrototype()
   const [choice, setChoice] = useState<number | null>(null)
   const [volume, setVolume] = useState<string | null>(null)

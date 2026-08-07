@@ -11,6 +11,7 @@ type PrototypeContextValue = {
   page: Page
   workout: Exercise[]
   workoutName: string
+  workoutDraftStudentId: string
   studentWorkout: Exercise[]
   studentWorkoutName: string
   painReports: PainReport[]
@@ -35,6 +36,7 @@ type PrototypeContextValue = {
   switchRole: (role: Role) => void
   setWorkout: React.Dispatch<React.SetStateAction<Exercise[]>>
   setWorkoutName: (name: string) => void
+  setWorkoutDraftStudentId: (studentId: string) => void
   addPainReport: (report: Omit<PainReport, 'id' | 'createdAt' | 'status'>) => void
   reviewPainReports: () => void
   setSessions: React.Dispatch<React.SetStateAction<Session[]>>
@@ -94,6 +96,7 @@ export function PrototypeProvider({ children, lockedRole }: { children: ReactNod
   const [page, setPage] = useState<Page>(initialPage)
   const [workout, setWorkout] = useState<Exercise[]>(() => demoState('elo-workout', initialWorkout, []))
   const [workoutName, setWorkoutName] = useState(() => demoState('elo-workout-name', 'Treino A · Inferiores conscientes', 'Nova prescrição'))
+  const [workoutDraftStudentId, setWorkoutDraftStudentId] = useState('')
   const [studentWorkout, setStudentWorkout] = useState<Exercise[]>(() => demoState('elo-published-workout', initialWorkout, []))
   const [studentWorkoutName, setStudentWorkoutName] = useState(() => demoState('elo-published-workout-name', 'Treino A · Inferiores conscientes', 'Nenhum treino publicado'))
   const [painReports, setPainReports] = useState<PainReport[]>(() => demoState('elo-pain', initialPainReports, []))
@@ -251,7 +254,7 @@ export function PrototypeProvider({ children, lockedRole }: { children: ReactNod
   }
   const resetPrototype = () => {
     Object.keys(localStorage).filter((key) => key.startsWith('elo-') && key !== 'elo-auth').forEach((key) => localStorage.removeItem(key))
-    setWorkout(initialWorkout); setWorkoutName('Treino A · Inferiores conscientes'); setStudentWorkout(initialWorkout); setStudentWorkoutName('Treino A · Inferiores conscientes'); setPainReports(initialPainReports)
+    setWorkout(initialWorkout); setWorkoutName('Treino A · Inferiores conscientes'); setWorkoutDraftStudentId(''); setStudentWorkout(initialWorkout); setStudentWorkoutName('Treino A · Inferiores conscientes'); setPainReports(initialPainReports)
     setSessions(initialSessions); setMessages(initialMessages); setFormQuestions(generalForm); setPublishedFormQuestions(generalForm); setFormTitle('Anamnese · contexto inicial'); setPublishedFormTitle('Anamnese geral'); setFormAnswers({}); setCompletedExercises([])
     const resetRole = lockedRole ?? 'trainer'
     const resetPage = homeForRole(resetRole)
@@ -260,11 +263,11 @@ export function PrototypeProvider({ children, lockedRole }: { children: ReactNod
   }
 
   const value = useMemo<PrototypeContextValue>(() => ({
-    role, page, workout, workoutName, studentWorkout, studentWorkoutName, painReports, sessions, messages, formQuestions, publishedFormQuestions, formTitle, publishedFormTitle, formAnswers, completedExercises,
+    role, page, workout, workoutName, workoutDraftStudentId, studentWorkout, studentWorkoutName, painReports, sessions, messages, formQuestions, publishedFormQuestions, formTitle, publishedFormTitle, formAnswers, completedExercises,
     completedMeals, water, formSubmitted, formSent, workoutSent, workoutFeedback, studentNotes, selectedStudentId, toast, navigate, switchRole,
-    setWorkout, setWorkoutName, addPainReport, reviewPainReports, setSessions, addMessage, setFormQuestions, setFormTitle,
+    setWorkout, setWorkoutName, setWorkoutDraftStudentId, addPainReport, reviewPainReports, setSessions, addMessage, setFormQuestions, setFormTitle,
     setCompletedExercises, toggleMeal, setWater, submitForm, sendWorkout, sendForm, submitWorkoutFeedback, addStudentNote, setSelectedStudentId, notify, resetPrototype,
-  }), [role, page, workout, workoutName, studentWorkout, studentWorkoutName, painReports, sessions, messages, formQuestions, publishedFormQuestions, formTitle, publishedFormTitle, formAnswers, completedExercises, completedMeals, water, formSubmitted, formSent, workoutSent, workoutFeedback, studentNotes, selectedStudentId, toast, lockedRole])
+  }), [role, page, workout, workoutName, workoutDraftStudentId, studentWorkout, studentWorkoutName, painReports, sessions, messages, formQuestions, publishedFormQuestions, formTitle, publishedFormTitle, formAnswers, completedExercises, completedMeals, water, formSubmitted, formSent, workoutSent, workoutFeedback, studentNotes, selectedStudentId, toast, lockedRole])
 
   return <PrototypeContext.Provider value={value}>{children}</PrototypeContext.Provider>
 }
