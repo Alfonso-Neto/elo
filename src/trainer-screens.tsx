@@ -9,9 +9,15 @@ import { BackButton, Button, Drawer, Eyebrow, Modal, MovementDemo, PageIntro, Pr
 import { usePrototype } from './prototype-context'
 import { useAuth } from './auth/auth-context'
 import { TrainerStudentsEnrollment } from './onboarding/EnrollmentScreens'
+import { LiveTrainerDashboard } from './live/LiveTrainerDashboard'
 import type { Exercise, FormQuestion, QuestionType, Session, Student } from './types'
 
 export function TrainerDashboard() {
+  const { isDemo } = useAuth()
+  return isDemo ? <DemoTrainerDashboard /> : <LiveTrainerDashboard />
+}
+
+function DemoTrainerDashboard() {
   const { navigate, painReports, sessions, messages, formSubmitted, workoutSent, workoutFeedback, setSelectedStudentId } = usePrototype()
   const openPain = painReports.filter((report) => report.status === 'open')
   const todaySessions = sessions.filter((session) => session.date === '2026-08-07' && session.status !== 'available')
