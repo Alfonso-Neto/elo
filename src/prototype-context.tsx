@@ -74,7 +74,16 @@ const isPage = (value: string): value is Page => [...trainerOnlyPages, ...studen
 const homeForRole = (role: Role): Page => role === 'trainer' ? 'dashboard' : 'today'
 const canAccessPage = (role: Role, page: Page) => page === 'schedule' || page === 'messages' || (role === 'trainer' ? trainerOnlyPages.includes(page) : studentOnlyPages.includes(page))
 
+export const legacyPrototypeStorageKeys = [
+  'elo-role', 'elo-workout', 'elo-workout-name', 'elo-published-workout', 'elo-published-workout-name',
+  'elo-pain', 'elo-sessions', 'elo-messages', 'elo-form', 'elo-published-form', 'elo-form-title',
+  'elo-published-form-title', 'elo-form-answers', 'elo-completed', 'elo-meals', 'elo-water',
+  'elo-form-submitted', 'elo-form-sent', 'elo-workout-sent', 'elo-workout-feedback', 'elo-student-notes',
+] as const
+
 export function PrototypeProvider({ children, lockedRole }: { children: ReactNode; lockedRole?: Role }) {
+  const isRemote = lockedRole !== undefined
+  const demoState = <T,>(key: string, demoFallback: T, remoteFallback: T) => isRemote ? remoteFallback : readLocal(key, demoFallback)
   const requestedRole = new URLSearchParams(window.location.search).get('role')
   const initialRole: Role = lockedRole ?? (requestedRole === 'student' || requestedRole === 'trainer' ? requestedRole : readLocal('elo-role', 'trainer'))
   const requestedPage = window.location.hash.replace('#/', '')
@@ -83,56 +92,61 @@ export function PrototypeProvider({ children, lockedRole }: { children: ReactNod
     : homeForRole(initialRole)
   const [role, setRole] = useState<Role>(initialRole)
   const [page, setPage] = useState<Page>(initialPage)
-  const [workout, setWorkout] = useState<Exercise[]>(() => readLocal('elo-workout', initialWorkout))
-  const [workoutName, setWorkoutName] = useState(() => readLocal('elo-workout-name', 'Treino A · Inferiores conscientes'))
-  const [studentWorkout, setStudentWorkout] = useState<Exercise[]>(() => readLocal('elo-published-workout', initialWorkout))
-  const [studentWorkoutName, setStudentWorkoutName] = useState(() => readLocal('elo-published-workout-name', 'Treino A · Inferiores conscientes'))
-  const [painReports, setPainReports] = useState<PainReport[]>(() => readLocal('elo-pain', initialPainReports))
-  const [sessions, setSessions] = useState<Session[]>(() => readLocal('elo-sessions', initialSessions))
-  const [messages, setMessages] = useState<ChatMessage[]>(() => readLocal('elo-messages', initialMessages))
-  const [formQuestions, setFormQuestions] = useState<FormQuestion[]>(() => readLocal('elo-form', generalForm))
-  const [publishedFormQuestions, setPublishedFormQuestions] = useState<FormQuestion[]>(() => readLocal('elo-published-form', generalForm))
-  const [formTitle, setFormTitle] = useState(() => readLocal('elo-form-title', 'Anamnese · contexto inicial'))
-  const [publishedFormTitle, setPublishedFormTitle] = useState(() => readLocal('elo-published-form-title', 'Anamnese geral'))
-  const [formAnswers, setFormAnswers] = useState<Record<string, string | string[]>>(() => readLocal('elo-form-answers', {}))
-  const [completedExercises, setCompletedExercises] = useState<string[]>(() => readLocal('elo-completed', []))
-  const [completedMeals, setCompletedMeals] = useState<string[]>(() => readLocal('elo-meals', []))
-  const [water, setWater] = useState(() => readLocal('elo-water', 3))
-  const [formSubmitted, setFormSubmitted] = useState(() => readLocal('elo-form-submitted', false))
-  const [formSent, setFormSent] = useState(() => readLocal('elo-form-sent', true))
-  const [workoutSent, setWorkoutSent] = useState(() => readLocal('elo-workout-sent', false))
-  const [workoutFeedback, setWorkoutFeedback] = useState<WorkoutFeedback>(() => readLocal('elo-workout-feedback', null))
-  const [studentNotes, setStudentNotes] = useState<StudentNote[]>(() => readLocal('elo-student-notes', []))
-  const [selectedStudentId, setSelectedStudentId] = useState('marina')
+  const [workout, setWorkout] = useState<Exercise[]>(() => demoState('elo-workout', initialWorkout, []))
+  const [workoutName, setWorkoutName] = useState(() => demoState('elo-workout-name', 'Treino A · Inferiores conscientes', 'Nova prescrição'))
+  const [studentWorkout, setStudentWorkout] = useState<Exercise[]>(() => demoState('elo-published-workout', initialWorkout, []))
+  const [studentWorkoutName, setStudentWorkoutName] = useState(() => demoState('elo-published-workout-name', 'Treino A · Inferiores conscientes', 'Nenhum treino publicado'))
+  const [painReports, setPainReports] = useState<PainReport[]>(() => demoState('elo-pain', initialPainReports, []))
+  const [sessions, setSessions] = useState<Session[]>(() => demoState('elo-sessions', initialSessions, []))
+  const [messages, setMessages] = useState<ChatMessage[]>(() => demoState('elo-messages', initialMessages, []))
+  const [formQuestions, setFormQuestions] = useState<FormQuestion[]>(() => demoState('elo-form', generalForm, generalForm))
+  const [publishedFormQuestions, setPublishedFormQuestions] = useState<FormQuestion[]>(() => demoState('elo-published-form', generalForm, []))
+  const [formTitle, setFormTitle] = useState(() => demoState('elo-form-title', 'Anamnese · contexto inicial', 'Nova anamnese'))
+  const [publishedFormTitle, setPublishedFormTitle] = useState(() => demoState('elo-published-form-title', 'Anamnese geral', 'Nenhuma anamnese pendente'))
+  const [formAnswers, setFormAnswers] = useState<Record<string, string | string[]>>(() => demoState('elo-form-answers', {}, {}))
+  const [completedExercises, setCompletedExercises] = useState<string[]>(() => demoState('elo-completed', [], []))
+  const [completedMeals, setCompletedMeals] = useState<string[]>(() => demoState('elo-meals', [], []))
+  const [water, setWater] = useState(() => demoState('elo-water', 3, 0))
+  const [formSubmitted, setFormSubmitted] = useState(() => demoState('elo-form-submitted', false, false))
+  const [formSent, setFormSent] = useState(() => demoState('elo-form-sent', true, false))
+  const [workoutSent, setWorkoutSent] = useState(() => demoState('elo-workout-sent', false, false))
+  const [workoutFeedback, setWorkoutFeedback] = useState<WorkoutFeedback>(() => demoState('elo-workout-feedback', null, null))
+  const [studentNotes, setStudentNotes] = useState<StudentNote[]>(() => demoState('elo-student-notes', [], []))
+  const [selectedStudentId, setSelectedStudentId] = useState(isRemote ? '' : 'marina')
   const [toast, setToast] = useState<Toast>(null)
 
-  useEffect(() => { if (!lockedRole) localStorage.setItem('elo-role', JSON.stringify(role)) }, [lockedRole, role])
+  useEffect(() => {
+    if (!isRemote) return
+    legacyPrototypeStorageKeys.forEach((key) => localStorage.removeItem(key))
+  }, [isRemote])
+  useEffect(() => { if (!isRemote) localStorage.setItem('elo-role', JSON.stringify(role)) }, [isRemote, role])
   useEffect(() => {
     if (!lockedRole) return
     setRole(lockedRole)
     setPage((current) => canAccessPage(lockedRole, current) ? current : homeForRole(lockedRole))
   }, [lockedRole])
-  useEffect(() => { localStorage.setItem('elo-workout', JSON.stringify(workout)) }, [workout])
-  useEffect(() => { localStorage.setItem('elo-workout-name', JSON.stringify(workoutName)) }, [workoutName])
-  useEffect(() => { localStorage.setItem('elo-published-workout', JSON.stringify(studentWorkout)) }, [studentWorkout])
-  useEffect(() => { localStorage.setItem('elo-published-workout-name', JSON.stringify(studentWorkoutName)) }, [studentWorkoutName])
-  useEffect(() => { localStorage.setItem('elo-pain', JSON.stringify(painReports)) }, [painReports])
-  useEffect(() => { localStorage.setItem('elo-sessions', JSON.stringify(sessions)) }, [sessions])
-  useEffect(() => { localStorage.setItem('elo-messages', JSON.stringify(messages)) }, [messages])
-  useEffect(() => { localStorage.setItem('elo-form', JSON.stringify(formQuestions)) }, [formQuestions])
-  useEffect(() => { localStorage.setItem('elo-published-form', JSON.stringify(publishedFormQuestions)) }, [publishedFormQuestions])
-  useEffect(() => { localStorage.setItem('elo-form-title', JSON.stringify(formTitle)) }, [formTitle])
-  useEffect(() => { localStorage.setItem('elo-published-form-title', JSON.stringify(publishedFormTitle)) }, [publishedFormTitle])
-  useEffect(() => { localStorage.setItem('elo-form-answers', JSON.stringify(formAnswers)) }, [formAnswers])
-  useEffect(() => { localStorage.setItem('elo-completed', JSON.stringify(completedExercises)) }, [completedExercises])
-  useEffect(() => { localStorage.setItem('elo-meals', JSON.stringify(completedMeals)) }, [completedMeals])
-  useEffect(() => { localStorage.setItem('elo-water', JSON.stringify(water)) }, [water])
-  useEffect(() => { localStorage.setItem('elo-form-submitted', JSON.stringify(formSubmitted)) }, [formSubmitted])
-  useEffect(() => { localStorage.setItem('elo-form-sent', JSON.stringify(formSent)) }, [formSent])
-  useEffect(() => { localStorage.setItem('elo-workout-sent', JSON.stringify(workoutSent)) }, [workoutSent])
-  useEffect(() => { localStorage.setItem('elo-workout-feedback', JSON.stringify(workoutFeedback)) }, [workoutFeedback])
-  useEffect(() => { localStorage.setItem('elo-student-notes', JSON.stringify(studentNotes)) }, [studentNotes])
+  useEffect(() => { if (!isRemote) localStorage.setItem('elo-workout', JSON.stringify(workout)) }, [isRemote, workout])
+  useEffect(() => { if (!isRemote) localStorage.setItem('elo-workout-name', JSON.stringify(workoutName)) }, [isRemote, workoutName])
+  useEffect(() => { if (!isRemote) localStorage.setItem('elo-published-workout', JSON.stringify(studentWorkout)) }, [isRemote, studentWorkout])
+  useEffect(() => { if (!isRemote) localStorage.setItem('elo-published-workout-name', JSON.stringify(studentWorkoutName)) }, [isRemote, studentWorkoutName])
+  useEffect(() => { if (!isRemote) localStorage.setItem('elo-pain', JSON.stringify(painReports)) }, [isRemote, painReports])
+  useEffect(() => { if (!isRemote) localStorage.setItem('elo-sessions', JSON.stringify(sessions)) }, [isRemote, sessions])
+  useEffect(() => { if (!isRemote) localStorage.setItem('elo-messages', JSON.stringify(messages)) }, [isRemote, messages])
+  useEffect(() => { if (!isRemote) localStorage.setItem('elo-form', JSON.stringify(formQuestions)) }, [formQuestions, isRemote])
+  useEffect(() => { if (!isRemote) localStorage.setItem('elo-published-form', JSON.stringify(publishedFormQuestions)) }, [isRemote, publishedFormQuestions])
+  useEffect(() => { if (!isRemote) localStorage.setItem('elo-form-title', JSON.stringify(formTitle)) }, [formTitle, isRemote])
+  useEffect(() => { if (!isRemote) localStorage.setItem('elo-published-form-title', JSON.stringify(publishedFormTitle)) }, [isRemote, publishedFormTitle])
+  useEffect(() => { if (!isRemote) localStorage.setItem('elo-form-answers', JSON.stringify(formAnswers)) }, [formAnswers, isRemote])
+  useEffect(() => { if (!isRemote) localStorage.setItem('elo-completed', JSON.stringify(completedExercises)) }, [completedExercises, isRemote])
+  useEffect(() => { if (!isRemote) localStorage.setItem('elo-meals', JSON.stringify(completedMeals)) }, [completedMeals, isRemote])
+  useEffect(() => { if (!isRemote) localStorage.setItem('elo-water', JSON.stringify(water)) }, [isRemote, water])
+  useEffect(() => { if (!isRemote) localStorage.setItem('elo-form-submitted', JSON.stringify(formSubmitted)) }, [formSubmitted, isRemote])
+  useEffect(() => { if (!isRemote) localStorage.setItem('elo-form-sent', JSON.stringify(formSent)) }, [formSent, isRemote])
+  useEffect(() => { if (!isRemote) localStorage.setItem('elo-workout-sent', JSON.stringify(workoutSent)) }, [isRemote, workoutSent])
+  useEffect(() => { if (!isRemote) localStorage.setItem('elo-workout-feedback', JSON.stringify(workoutFeedback)) }, [isRemote, workoutFeedback])
+  useEffect(() => { if (!isRemote) localStorage.setItem('elo-student-notes', JSON.stringify(studentNotes)) }, [isRemote, studentNotes])
   useEffect(() => {
+    if (isRemote) return
     const sync = (event: StorageEvent) => {
       switch (event.key) {
         case 'elo-workout': setWorkout(readStorageEvent(event.newValue, initialWorkout)); break
@@ -159,7 +173,7 @@ export function PrototypeProvider({ children, lockedRole }: { children: ReactNod
     }
     window.addEventListener('storage', sync)
     return () => window.removeEventListener('storage', sync)
-  }, [])
+  }, [isRemote])
   useEffect(() => { window.scrollTo({ top: 0, behavior: 'auto' }) }, [page])
   useEffect(() => { if (!toast) return; const timer = window.setTimeout(() => setToast(null), 4200); return () => window.clearTimeout(timer) }, [toast])
   useEffect(() => {
