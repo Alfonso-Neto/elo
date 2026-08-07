@@ -14,6 +14,10 @@ body{overflow-x:hidden}
 .page,.today-workout>div,.assistant-page .page-intro>div{min-width:0}
 .page h1,.page h2,.page h3,.page p{overflow-wrap:break-word}
 
+/* Keep the template icon rhythm without pushing the footer arrow into the copy. */
+.template-grid>button>svg{margin:28px 0 20px}
+.template-grid footer svg{margin:0}
+
 @media (min-width:761px) and (max-width:1040px){
   .sidebar-bottom .role-switch{display:grid;grid-template-columns:1fr 1fr;padding:3px}
   .sidebar-bottom .role-switch button{display:flex!important;font-size:0;padding:0}
