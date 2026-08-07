@@ -1,0 +1,28 @@
+html,body,#root,.app-shell,.main-shell,.page{max-width:100%}
+body{overflow-x:hidden}
+.role-student{--blue:#3154c8}
+.messenger.student-thread-only{grid-template-columns:1fr}
+.mobile-conversation-picker{display:none}
+.form-stack textarea{width:100%;min-height:130px;padding:12px;border:1px solid var(--line);background:var(--white);resize:vertical}
+.switch-label input:focus-visible+i{outline:2px solid var(--blue);outline-offset:3px}
+.mobile-more-menu{display:grid}
+.mobile-more-menu>button{width:100%;min-height:54px;display:flex;align-items:center;gap:11px;border:0;border-top:1px solid var(--line);background:transparent;text-align:left}
+.mobile-more-menu .role-switch{margin:12px 0;border-color:var(--line);background:var(--white)}
+.mobile-more-menu .role-switch button{color:var(--muted)}
+.mobile-more-menu .role-switch button.active{color:var(--ink);background:var(--lime)}
+.builder-validation{display:flex;align-items:center;gap:8px;margin:12px 0 86px;padding:12px 14px;border:1px solid #d7aa63;background:#f5e8ce;color:#694800;font-size:11px}
+.page,.today-workout>div,.assistant-page .page-intro>div{min-width:0}
+.page h1,.page h2,.page h3,.page p{overflow-wrap:break-word}
+
+@media (min-width:761px) and (max-width:1040px){
+  .sidebar-bottom .role-switch{display:grid;grid-template-columns:1fr 1fr;padding:3px}
+  .sidebar-bottom .role-switch button{display:flex!important;font-size:0;padding:0}
+}
+
+@media(max-width:760px){
+  .messenger{grid-template-rows:auto 1fr}
+  .messenger.student-thread-only{grid-template-rows:1fr}
+  .mobile-conversation-picker{display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid var(--line);background:var(--paper)}
+  .mobile-conversation-picker span{color:var(--muted);font:600 8px 'Roboto Mono'}
+  .mobile-conversation-picker select{min-width:0;flex:1;height:42px;padding:0 10px;border:1px solid var(--line);background:var(--white)}
+}

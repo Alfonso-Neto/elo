@@ -1,0 +1,94 @@
+import { useEffect, useRef, type ReactNode, type RefObject } from 'react'
+import { Check, ChevronLeft, Link2, Pause, Play, X } from 'lucide-react'
+
+export function Brand() {
+  return <div className="brand" aria-label="Elo"><span className="brand-mark"><i /><i /><i /></span><strong>elo</strong></div>
+}
+
+export function Eyebrow({ children, accent = false }: { children: ReactNode; accent?: boolean }) {
+  return <span className={accent ? 'eyebrow accent-text' : 'eyebrow'}>{children}</span>
+}
+
+export function PageIntro({ eyebrow, title, copy, action }: { eyebrow: string; title: ReactNode; copy?: string; action?: ReactNode }) {
+  return <header className="page-intro"><div><Eyebrow accent>{eyebrow}</Eyebrow><h2>{title}</h2>{copy && <p>{copy}</p>}</div>{action}</header>
+}
+
+export function SectionTitle({ index, title, copy, action }: { index?: string; title: string; copy?: string; action?: ReactNode }) {
+  return <div className="section-title">{index && <span>{index}</span>}<div><h3>{title}</h3>{copy && <p>{copy}</p>}</div>{action && <div className="section-action">{action}</div>}</div>
+}
+
+export function Button({ children, variant = 'primary', className = '', ...props }: React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: 'primary' | 'secondary' | 'ghost' | 'danger' }) {
+  return <button className={`button ${variant} ${className}`} {...props}>{children}</button>
+}
+
+function useDialogBehavior(ref: RefObject<HTMLElement | null>, onClose: () => void) {
+  const closeRef = useRef(onClose)
+  useEffect(() => { closeRef.current = onClose }, [onClose])
+  useEffect(() => {
+    const previous = document.activeElement as HTMLElement | null
+    const selector = 'button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [href], [tabindex]:not([tabindex="-1"])'
+    const focusables = () => Array.from(ref.current?.querySelectorAll<HTMLElement>(selector) ?? [])
+    const frame = window.requestAnimationFrame(() => {
+      const preferred = ref.current?.querySelector<HTMLElement>('[autofocus], input:not([disabled]), textarea:not([disabled]), select:not([disabled]), button:not([disabled]):not(.modal-close)')
+      ;(preferred ?? ref.current)?.focus()
+    })
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') closeRef.current()
+      if (event.key !== 'Tab') return
+      const items = focusables()
+      if (!items.length) return
+      const first = items[0]; const last = items[items.length - 1]
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus() }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus() }
+    }
+    window.addEventListener('keydown', onKey)
+    document.body.classList.add('modal-open')
+    return () => { window.cancelAnimationFrame(frame); window.removeEventListener('keydown', onKey); document.body.classList.remove('modal-open'); previous?.focus() }
+  }, [ref])
+}
+
+export function Modal({ title, eyebrow, onClose, children, size = 'medium' }: { title: string; eyebrow?: string; onClose: () => void; children: ReactNode; size?: 'small' | 'medium' | 'large' }) {
+  const ref = useRef<HTMLElement>(null)
+  useDialogBehavior(ref, onClose)
+  return <div className="modal-backdrop" onMouseDown={onClose}>
+    <section ref={ref} className={`modal ${size}`} role="dialog" aria-modal="true" aria-labelledby="modal-title" tabIndex={-1} onMouseDown={(event) => event.stopPropagation()}>
+      <button className="icon-button modal-close" onClick={onClose} aria-label="Fechar"><X size={19} /></button>
+      {eyebrow && <Eyebrow accent>{eyebrow}</Eyebrow>}<h2 id="modal-title">{title}</h2>{children}
+    </section>
+  </div>
+}
+
+export function Drawer({ title, eyebrow, onClose, children }: { title: string; eyebrow?: string; onClose: () => void; children: ReactNode }) {
+  const ref = useRef<HTMLElement>(null)
+  useDialogBehavior(ref, onClose)
+  return <div className="modal-backdrop" onMouseDown={onClose}><aside ref={ref} className="drawer" role="dialog" aria-modal="true" aria-labelledby="drawer-title" tabIndex={-1} onMouseDown={(event) => event.stopPropagation()}>
+    <button className="icon-button modal-close" onClick={onClose} aria-label="Fechar"><X size={19} /></button>
+    {eyebrow && <Eyebrow accent>{eyebrow}</Eyebrow>}<h2 id="drawer-title">{title}</h2>{children}
+  </aside></div>
+}
+
+export function BackButton({ onClick, label = 'Voltar' }: { onClick: () => void; label?: string }) {
+  return <button className="back-button" onClick={onClick}><ChevronLeft size={17} />{label}</button>
+}
+
+export function Segmented({ value, onChange, options, label }: { value: string; onChange: (value: string) => void; options: { value: string; label: string }[]; label: string }) {
+  return <div className="segmented" role="group" aria-label={label}>{options.map((option) => <button key={option.value} className={value === option.value ? 'active' : ''} onClick={() => onChange(option.value)} aria-pressed={value === option.value}>{option.label}</button>)}</div>
+}
+
+export function Progress({ value, label }: { value: number; label: string }) {
+  const bounded = Math.max(0, Math.min(100, value))
+  return <div className="progress" role="progressbar" aria-label={label} aria-valuemin={0} aria-valuemax={100} aria-valuenow={bounded}><i style={{ transform: `scaleX(${bounded / 100})` }} /></div>
+}
+
+export function MovementDemo({ name, playing, onToggle }: { name: string; playing: boolean; onToggle: () => void }) {
+  return <div className={playing ? 'movement-demo playing' : 'movement-demo'}>
+    <div className="movement-grid" /><div className="figure" aria-label={`Demonstração de ${name}`} role="img">
+      <i className="head" /><i className="torso" /><i className="arm one" /><i className="arm two" /><i className="leg one" /><i className="leg two" /><span className="weight"><i /><i /></span>
+    </div>
+    <div className="movement-caption"><span><Link2 size={14} /> DEMONSTRAÇÃO VETORIAL · 24s</span><button onClick={onToggle} aria-label={playing ? 'Pausar demonstração' : 'Tocar demonstração'}>{playing ? <Pause size={15} /> : <Play size={15} />}{playing ? 'Pausar' : 'Tocar'}</button></div>
+  </div>
+}
+
+export function SuccessState({ title, copy, action }: { title: string; copy: string; action?: ReactNode }) {
+  return <div className="success-state"><span><Check size={28} /></span><h3>{title}</h3><p>{copy}</p>{action}</div>
+}
