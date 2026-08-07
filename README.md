@@ -1,6 +1,6 @@
-# Elo — protótipo web
+# Elo — web app
 
-Protótipo navegável para validar o loop central do Elo entre treinador e aluna. A aplicação roda inteiramente no navegador e persiste as ações em `localStorage`.
+Aplicação web mobile-first para validar e homologar o loop central do Elo entre professor e aluno. O modo de demonstração ainda usa dados fictícios no navegador; a base de autenticação e autorização remota usa Supabase.
 
 ## Executar
 
@@ -10,6 +10,16 @@ npm run dev
 ```
 
 O projeto web está diretamente na raiz de `projeto-pobre/`.
+
+## Configurar autenticação
+
+1. Crie um projeto Supabase separado para homologação.
+2. Copie `.env.example` para `.env.local`.
+3. Preencha somente `VITE_SUPABASE_URL` e `VITE_SUPABASE_PUBLISHABLE_KEY` com valores públicos.
+4. Aplique as migrations em `supabase/migrations/` no projeto de homologação.
+5. Configure no Supabase a URL do site e apenas os redirects usados pelo ambiente.
+
+Chaves `service_role`, segredos de IA e credenciais SMTP nunca devem ser colocados em variáveis `VITE_*`.
 
 ## Roteiro principal
 
@@ -41,6 +51,6 @@ npm test
 npm run build
 ```
 
-Este é um protótipo de validação sem backend, autenticação ou persistência remota. Dados exibidos são fictícios e permanecem apenas no navegador atual.
+O modo de demonstração continua isolado em `localStorage` e contém apenas dados fictícios. Em homologação, identidade, papéis e acesso passam pela configuração Supabase; os próximos domínios migram para tabelas protegidas por RLS em fatias verticais.
 
 Os testes automatizados cobrem nove jornadas críticas, incluindo privacidade da conversa, Copiloto, publicação de treino, feedback pós-treino, relato de dor, anamnese e entrada direta como aluna.
