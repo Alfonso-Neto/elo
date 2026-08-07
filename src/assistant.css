@@ -1,0 +1,13 @@
+.pain-red-flags{display:grid;gap:8px;margin-top:15px}
+.pain-red-flags button{min-height:50px;display:grid;grid-template-columns:24px 1fr;align-items:center;gap:10px;padding:10px 13px;border:1px solid var(--line);border-radius:13px;background:#fff;color:var(--ink);text-align:left;font-size:10px;line-height:1.45}
+.pain-red-flags button i{width:20px;height:20px;display:grid;place-items:center;border:1px solid var(--line-dark);border-radius:7px;color:transparent;font-style:normal}
+.pain-red-flags button.active{border-color:var(--apricot);background:#fff7f2}.pain-red-flags button.active i{border-color:var(--apricot);background:var(--apricot);color:#fff}
+.pain-step-action{margin-top:14px}
+.pain-safety-guidance{display:grid;grid-template-columns:23px 1fr;gap:11px;margin:0 0 14px;padding:15px;border:1px solid #d9bf8a;border-radius:15px;background:#fff6e5;color:#6a4a12}
+.pain-safety-guidance.stop{border-color:#dfa091;background:#fff0eb;color:#8b3428}
+.pain-safety-guidance svg{margin-top:1px}.pain-safety-guidance strong,.pain-safety-guidance p{display:block}.pain-safety-guidance p{margin:5px 0 0;font-size:10px;line-height:1.55}
+.pain-review{display:grid;gap:13px}.pain-review dl{display:grid;grid-template-columns:1fr 1fr;margin:0;border:1px solid var(--line);border-radius:16px;overflow:hidden;background:#fff}
+.pain-review dl>div{min-width:0;padding:13px;border-right:1px solid var(--line);border-bottom:1px solid var(--line)}.pain-review dl>div:nth-child(2n){border-right:0}.pain-review dl>div:nth-last-child(-n+2){border-bottom:0}
+.pain-review dt{color:var(--ink-soft);font:700 8px var(--mono);letter-spacing:.06em;text-transform:uppercase}.pain-review dd{margin:6px 0 0;color:var(--ink);font-size:11px;line-height:1.45;overflow-wrap:anywhere}
+.pain-consent{padding:15px;border:1px solid var(--line);border-radius:15px;background:rgba(255,255,255,.72)}.pain-consent>p{margin:0 0 12px;color:var(--ink-soft);font-size:9px;line-height:1.55}.pain-consent>small{display:block;margin-top:8px;color:#a9362b;font-size:9px}
+@media(max-width:520px){.pain-review dl{grid-template-columns:1fr}.pain-review dl>div{border-right:0}.pain-review dl>div:nth-last-child(2){border-bottom:1px solid var(--line)} }

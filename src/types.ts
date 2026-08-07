@@ -39,6 +39,9 @@ export type PainReport = {
   location: string
   moment: string
   intensity: number
+  movement?: string
+  redFlags?: string[]
+  safetyLevel?: 'monitor' | 'pause_and_contact' | 'stop_and_assess'
   createdAt: string
   status: 'open' | 'reviewed'
 }
