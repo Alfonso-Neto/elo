@@ -11,6 +11,9 @@ import { useAuth } from './auth/auth-context'
 import { TrainerStudentsEnrollment } from './onboarding/EnrollmentScreens'
 import { LiveTrainerDashboard } from './live/LiveTrainerDashboard'
 import { LiveTrainerCopilot } from './live/LiveTrainerCopilot'
+import { LiveFormBuilderScreen, LiveTrainerFormsScreen, LiveWorkoutBuilderScreen } from './live/LiveTrainerTraining'
+import { LiveStudentDetailScreen } from './live/LiveStudentDetail'
+import { LiveMessagesScreen, LiveTrainerScheduleScreen } from './live/LiveOperationsScreens'
 import type { Exercise, FormQuestion, QuestionType, Session, Student } from './types'
 
 export function TrainerDashboard() {
@@ -73,6 +76,11 @@ function DemoStudentsScreen() {
 }
 
 export function StudentDetailScreen() {
+  const { isDemo } = useAuth()
+  return isDemo ? <DemoStudentDetailScreen /> : <LiveStudentDetailScreen />
+}
+
+function DemoStudentDetailScreen() {
   const { navigate, selectedStudentId, painReports, sessions, workoutFeedback, studentNotes, addStudentNote, notify } = usePrototype()
   const [noteOpen, setNoteOpen] = useState(false)
   const [noteDraft, setNoteDraft] = useState('')
@@ -128,6 +136,11 @@ function DemoCopilotScreen() {
 }
 
 export function WorkoutBuilderScreen() {
+  const { isDemo } = useAuth()
+  return isDemo ? <DemoWorkoutBuilderScreen /> : <LiveWorkoutBuilderScreen />
+}
+
+function DemoWorkoutBuilderScreen() {
   const { navigate, workout, workoutName, setWorkout, setWorkoutName, sendWorkout, workoutSent, notify } = usePrototype()
   const [expanded, setExpanded] = useState(workout[0]?.id ?? '')
   const [libraryOpen, setLibraryOpen] = useState(false)
@@ -163,6 +176,11 @@ const questionTypes: { value: QuestionType; label: string }[] = [
 ]
 
 export function FormsScreen() {
+  const { isDemo } = useAuth()
+  return isDemo ? <DemoFormsScreen /> : <LiveTrainerFormsScreen />
+}
+
+function DemoFormsScreen() {
   const { navigate, setFormQuestions, setFormTitle, publishedFormQuestions, publishedFormTitle, formSubmitted, formAnswers, notify } = usePrototype()
   const [responseOpen, setResponseOpen] = useState(false)
   const openTemplate = (id: string) => { setFormQuestions((formTemplateQuestions[id] ?? generalForm).map((question) => ({ ...question, options: question.options ? [...question.options] : undefined }))); setFormTitle(formTemplates.find((template) => template.id === id)?.name ?? 'Nova anamnese'); navigate('form-builder') }
@@ -174,6 +192,11 @@ export function FormsScreen() {
 }
 
 export function FormBuilderScreen() {
+  const { isDemo } = useAuth()
+  return isDemo ? <DemoFormBuilderScreen /> : <LiveFormBuilderScreen />
+}
+
+function DemoFormBuilderScreen() {
   const { navigate, formQuestions, formTitle: title, setFormTitle: setTitle, setFormQuestions, sendForm, notify, switchRole } = usePrototype()
   const [preview, setPreview] = useState(false)
   const update = (id: string, patch: Partial<FormQuestion>) => setFormQuestions((items) => items.map((item) => item.id === id ? { ...item, ...patch } : item))
@@ -203,6 +226,11 @@ const scheduleDays = [
 ]
 
 export function ScheduleScreen() {
+  const { isDemo } = useAuth()
+  return isDemo ? <DemoScheduleScreen /> : <LiveTrainerScheduleScreen />
+}
+
+function DemoScheduleScreen() {
   const { sessions, setSessions, notify } = usePrototype()
   const [day, setDay] = useState('2026-08-07')
   const [createOpen, setCreateOpen] = useState(false)
@@ -224,6 +252,11 @@ export function ScheduleScreen() {
 }
 
 export function MessagesScreen() {
+  const { isDemo } = useAuth()
+  return isDemo ? <DemoMessagesScreen /> : <LiveMessagesScreen />
+}
+
+function DemoMessagesScreen() {
   const { role, messages, addMessage, selectedStudentId, setSelectedStudentId, notify } = usePrototype()
   const [draft, setDraft] = useState('')
   const [search, setSearch] = useState('')
