@@ -166,6 +166,17 @@ function eventRow(overrides: Record<string, unknown> = {}) {
   }
 }
 
+function lifecycleRow(overrides: Record<string, unknown> = {}) {
+  return {
+    ...reportRow(),
+    lifecycle_status: 'open',
+    acknowledged_at: null,
+    resolved_at: null,
+    resolution_note: null,
+    ...overrides,
+  }
+}
+
 describe('signal mutation contracts', () => {
   it('reuses the caller command key across retries and sends the exact create RPC contract', async () => {
     const fake = new FakeSignalClient().queueRpc('create_pain_report', ok(reportId), ok(reportId))
@@ -258,6 +269,19 @@ describe('signal mutation contracts', () => {
     expect(fake.rpcCalls).toHaveLength(0)
   })
 
+  it('maps a terminal report race to a refreshable lifecycle conflict', async () => {
+    const fake = new FakeSignalClient().queueRpc('resolve_pain_report', {
+      data: null,
+      error: { code: '55000', message: 'pain report is already resolved' },
+    })
+
+    await expect(createSignalService(fake.asClient()).resolvePainReport({
+      painReportId: reportId,
+      idempotencyKey: key('pain-resolve'),
+      resolutionNote: 'Acompanhamento concluído.',
+    })).rejects.toMatchObject({ code: 'lifecycle_conflict' })
+  })
+
   it('retries consent with the same RPC key and returns the existing event contract', async () => {
     const consentRow = {
       id: consentId,
@@ -345,6 +369,59 @@ describe('signal read contracts', () => {
       range: [5, 7],
     })
     expect(fake.queryCalls[0].selected).not.toContain('detail')
+  })
+
+  it('lists a lifecycle-aware trainer queue through the unresolved RPC contract', async () => {
+    const fake = new FakeSignalClient().queueRpc('list_trainer_pain_reports', ok([
+      lifecycleRow(),
+      lifecycleRow({
+        id: '44444444-4444-4444-8444-444444444445',
+        signal_sequence: 2,
+        lifecycle_status: 'acknowledged',
+        acknowledged_at: timestamp,
+      }),
+      lifecycleRow({
+        id: '44444444-4444-4444-8444-444444444446',
+        signal_sequence: 3,
+      }),
+    ]))
+    const service = createSignalService(fake.asClient())
+
+    const page = await service.listTrainerPainReports(workspaceId, {
+      studentUserId: userId,
+      unresolvedOnly: true,
+      limit: 2,
+      offset: 4,
+    })
+
+    expect(page.items).toHaveLength(2)
+    expect(page.items[1]).toMatchObject({ status: 'acknowledged', acknowledgedAt: timestamp })
+    expect(page.nextOffset).toBe(6)
+    expect(fake.rpcCalls).toEqual([{
+      name: 'list_trainer_pain_reports',
+      args: {
+        p_workspace_id: workspaceId,
+        p_student_user_id: userId,
+        p_only_unresolved: true,
+        p_limit: 2,
+        p_offset: 4,
+      },
+    }])
+    expect(page.items[0]).not.toHaveProperty('detail')
+  })
+
+  it('rejects malformed or cross-tenant lifecycle rows', async () => {
+    const crossTenant = new FakeSignalClient().queueRpc('list_trainer_pain_reports', ok([
+      lifecycleRow({ workspace_id: otherWorkspaceId }),
+    ]))
+    await expect(createSignalService(crossTenant.asClient()).listTrainerPainReports(workspaceId))
+      .rejects.toMatchObject({ code: 'service_unavailable' })
+
+    const malformed = new FakeSignalClient().queueRpc('list_trainer_pain_reports', ok([
+      lifecycleRow({ lifecycle_status: 'resolved', resolved_at: timestamp, resolution_note: null }),
+    ]))
+    await expect(createSignalService(malformed.asClient()).listTrainerPainReports(workspaceId))
+      .rejects.toMatchObject({ code: 'service_unavailable' })
   })
 
   it('scopes a trainer signal query to one linked student before rendering it', async () => {

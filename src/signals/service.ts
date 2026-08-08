@@ -17,12 +17,14 @@ import {
   type KnownRedFlagCode,
   type PainReport,
   type PainReportEvent,
+  type PainReportLifecycleSummary,
   type PainReportSummary,
   type RecordHealthConsentCommand,
   type ResolvePainReportCommand,
   type SignalPage,
   type SignalPageOptions,
   type SymptomTiming,
+  type TrainerPainReportPageOptions,
 } from './types'
 
 export type SignalSupabaseClient = Pick<SupabaseClient, 'auth' | 'from' | 'rpc'>
@@ -93,6 +95,11 @@ function timestampString(row: Record<string, unknown>, key: string) {
   const value = requiredString(row, key)
   if (!Number.isFinite(Date.parse(value))) throw new SignalDomainError('service_unavailable')
   return value
+}
+
+function nullableTimestampString(row: Record<string, unknown>, key: string) {
+  if (row[key] === null) return null
+  return timestampString(row, key)
 }
 
 function safeSequence(value: unknown) {
@@ -245,6 +252,26 @@ function parsePainReport(row: unknown): PainReport {
     throw new SignalDomainError('service_unavailable')
   }
   return { ...summary, detail: row.detail as string | null }
+}
+
+function parsePainReportLifecycleSummary(row: unknown): PainReportLifecycleSummary {
+  if (!isRecord(row)) throw new SignalDomainError('service_unavailable')
+  const summary = parsePainReportSummary(row)
+  const status = row.lifecycle_status
+  if (status !== 'open' && status !== 'acknowledged' && status !== 'resolved') {
+    throw new SignalDomainError('service_unavailable')
+  }
+  const acknowledgedAt = nullableTimestampString(row, 'acknowledged_at')
+  const resolvedAt = nullableTimestampString(row, 'resolved_at')
+  const resolutionNote = row.resolution_note === null
+    ? null
+    : boundedString(row, 'resolution_note', 1, 1000)
+  if (
+    (status === 'open' && (acknowledgedAt !== null || resolvedAt !== null || resolutionNote !== null))
+    || (status === 'acknowledged' && (acknowledgedAt === null || resolvedAt !== null || resolutionNote !== null))
+    || (status === 'resolved' && (resolvedAt === null || resolutionNote === null))
+  ) throw new SignalDomainError('service_unavailable')
+  return { ...summary, status, acknowledgedAt, resolvedAt, resolutionNote }
 }
 
 function parsePainReportEvent(row: unknown): PainReportEvent {
@@ -458,6 +485,40 @@ export function createSignalService(client: SignalSupabaseClient = requireSupaba
     })
   }
 
+  async function listTrainerPainReports(
+    workspaceId: string,
+    options: TrainerPainReportPageOptions = {},
+  ): Promise<SignalPage<PainReportLifecycleSummary>> {
+    return runSafely(async () => {
+      assertUuid(workspaceId, 'workspaceId')
+      if (!isRecord(options)) throw new SignalDomainError('validation')
+      const page = parsePageOptions(options)
+      const studentUserId = options.studentUserId
+      if (studentUserId !== undefined) {
+        if (typeof studentUserId !== 'string') throw new SignalDomainError('validation')
+        assertUuid(studentUserId, 'studentUserId')
+      }
+      const unresolvedOnly = options.unresolvedOnly ?? true
+      if (typeof unresolvedOnly !== 'boolean') throw new SignalDomainError('validation')
+      const { data, error } = await client.rpc('list_trainer_pain_reports', {
+        p_workspace_id: workspaceId,
+        p_student_user_id: studentUserId ?? null,
+        p_only_unresolved: unresolvedOnly,
+        p_limit: page.limit,
+        p_offset: page.offset,
+      })
+
+      if (error) throw error
+      const reports = rowsFrom(data).map(parsePainReportLifecycleSummary)
+      if (reports.some((report) =>
+        report.workspaceId !== workspaceId
+        || (studentUserId !== undefined && report.studentUserId !== studentUserId))) {
+        throw new SignalDomainError('service_unavailable')
+      }
+      return pageFrom(reports, page.limit, page.offset)
+    })
+  }
+
   async function getPainReport(painReportId: string): Promise<PainReport | null> {
     return runSafely(async () => {
       assertUuid(painReportId, 'painReportId')
@@ -550,6 +611,7 @@ export function createSignalService(client: SignalSupabaseClient = requireSupaba
     listOwnReports,
     listWorkspaceReports,
     listStudentReports,
+    listTrainerPainReports,
     getPainReport,
     listPainReportTimeline,
     acknowledgePainReport,

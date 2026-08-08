@@ -36,12 +36,12 @@ supabase db push --linked
 
 Não use `db reset --linked` em um projeto compartilhado: esse comando recria o schema remoto. Antes de qualquer alteração posterior, confirme o `project-ref` e mantenha backup do ambiente.
 
-As 12 migrations devem aparecer, em ordem, no histórico remoto. Elas cobrem:
+As 13 migrations devem aparecer, em ordem, no histórico remoto. Elas cobrem:
 
 | Domínio | Persistência e fronteira |
 |---|---|
 | Identidade | perfis, CREF, workspaces, membros e convites |
-| Saúde | consentimentos versionados, relatos de dor e eventos append-only |
+| Saúde | consentimentos versionados, relatos de dor, eventos append-only e ciclo profissional serializado |
 | IA | execuções, propostas, decisões, cotas e auditoria |
 | Treino | versões imutáveis, conclusões, anamneses e notas profissionais |
 | Operação | agenda, solicitações, eventos e conversa privada |

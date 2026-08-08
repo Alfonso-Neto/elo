@@ -6,6 +6,7 @@ export type SignalErrorCode =
   | 'consent_required'
   | 'consent_policy_unavailable'
   | 'idempotency_conflict'
+  | 'lifecycle_conflict'
   | 'access_unavailable'
   | 'service_unavailable'
 
@@ -17,6 +18,7 @@ const messages: Record<SignalErrorCode, string> = {
   consent_required: 'O consentimento atual para dados de saúde é necessário antes do envio.',
   consent_policy_unavailable: 'A versão atual do consentimento não está disponível.',
   idempotency_conflict: 'Esta solicitação já foi usada com dados diferentes. Tente novamente.',
+  lifecycle_conflict: 'Este relato mudou ou já foi finalizado. Atualize o histórico antes de continuar.',
   access_unavailable: 'Este registro não está disponível para esta conta.',
   service_unavailable: 'Não foi possível concluir a solicitação agora. Tente novamente.',
 }
@@ -56,6 +58,9 @@ export function toSignalDomainError(error: unknown): SignalDomainError {
   }
   if (backendMessage.includes('current health-processing consent')) {
     return new SignalDomainError('consent_required')
+  }
+  if (backendCode === '55000') {
+    return new SignalDomainError('lifecycle_conflict')
   }
   if (backendCode === '22023' || backendCode === '23505' || backendMessage.includes('idempotency')) {
     return new SignalDomainError('idempotency_conflict')

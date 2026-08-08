@@ -134,6 +134,20 @@ export type PainReport = {
 
 export type PainReportSummary = Omit<PainReport, 'detail'>
 
+export type PainReportLifecycleStatus = 'open' | 'acknowledged' | 'resolved'
+
+export type PainReportLifecycleSummary = PainReportSummary & {
+  status: PainReportLifecycleStatus
+  acknowledgedAt: string | null
+  resolvedAt: string | null
+  resolutionNote: string | null
+}
+
+export type TrainerPainReportPageOptions = SignalPageOptions & {
+  studentUserId?: string
+  unresolvedOnly?: boolean
+}
+
 export type PainReportEvent = {
   id: string
   sequence: number
