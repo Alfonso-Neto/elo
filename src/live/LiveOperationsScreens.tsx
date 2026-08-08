@@ -344,24 +344,37 @@ export function LiveMessagesScreen() {
   const [sending, setSending] = useState(false)
   const [sendError, setSendError] = useState('')
   const sendKey = useRef('')
+  const selectedStudentRef = useRef(selectedStudentId)
+  const rosterRequest = useRef(0)
 
-  useEffect(() => {
+  useEffect(() => { selectedStudentRef.current = selectedStudentId }, [selectedStudentId])
+
+  const loadRoster = useCallback(async () => {
     if (!isTrainer) return
-    let current = true
-    void listEnrolledStudents().then((roster) => {
-      if (!current) return
+    const request = ++rosterRequest.current
+    setRosterReady(false)
+    setPhase('loading')
+    setError('')
+    try {
+      const roster = await listEnrolledStudents()
+      if (request !== rosterRequest.current) return
       setStudents(roster)
-      const resolved = roster.some((student) => student.userId === selectedStudentId) ? selectedStudentId : roster[0]?.userId ?? ''
+      const preferred = selectedStudentRef.current
+      const resolved = roster.some((student) => student.userId === preferred) ? preferred : roster[0]?.userId ?? ''
       setActiveId(resolved)
       setSelectedStudentId(resolved)
       setRosterReady(true)
-    }).catch((cause) => {
-      if (!current) return
+    } catch (cause) {
+      if (request !== rosterRequest.current) return
       setError(errorMessage(cause, 'Não foi possível carregar suas conversas.'))
       setPhase('error')
-    })
-    return () => { current = false }
-  }, [isTrainer, selectedStudentId, setSelectedStudentId])
+    }
+  }, [isTrainer, setSelectedStudentId])
+
+  useEffect(() => {
+    void loadRoster()
+    return () => { rosterRequest.current += 1 }
+  }, [loadRoster])
 
   const loadThread = useCallback(async (quiet = false) => {
     if (isTrainer && !rosterReady) return
@@ -434,7 +447,7 @@ export function LiveMessagesScreen() {
   }
 
   if (phase === 'loading') return <OperationsLoading copy="Abrindo o canal profissional..." />
-  if (phase === 'error') return <OperationsError copy={error} onRetry={() => void loadThread()} />
+  if (phase === 'error') return <OperationsError copy={error} onRetry={() => void (isTrainer && !rosterReady ? loadRoster() : loadThread())} />
   if (isTrainer && students.length === 0) return <div className="page centered-page enter"><div className="empty-state"><MessageCircle size={28} /><h3>Nenhuma conversa ainda.</h3><p>Convide um aluno para abrir um canal profissional privado.</p></div></div>
 
   const counterpartName = isTrainer ? activeStudent?.displayName ?? 'Aluno vinculado' : membership?.trainerName ?? 'Seu professor'
