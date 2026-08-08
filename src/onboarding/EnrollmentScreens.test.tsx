@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { StudentEnrollmentOnboarding, TrainerStudentsEnrollment } from './EnrollmentScreens'
+import { PrototypeProvider } from '../prototype-context'
 
 const auth = vi.hoisted(() => ({ useAuth: vi.fn() }))
 const enrollment = vi.hoisted(() => ({
@@ -48,7 +49,7 @@ describe('enrollment interface boundaries', () => {
 
   it('links trainer invitation failures to the email field and returns focus for correction', async () => {
     enrollment.createWorkspaceInvitation.mockRejectedValue(new Error('Não foi possível gerar o convite agora.'))
-    render(<TrainerStudentsEnrollment />)
+    render(<PrototypeProvider lockedRole="trainer"><TrainerStudentsEnrollment /></PrototypeProvider>)
 
     fireEvent.click(screen.getByRole('button', { name: /Convidar aluno/i }))
     const input = screen.getByLabelText('Email do aluno')
@@ -61,5 +62,19 @@ describe('enrollment interface boundaries', () => {
     expect(input).toHaveAttribute('aria-describedby', 'invitation-email-error')
     expect(input).toHaveValue('aluna@example.com')
     await waitFor(() => expect(input).toHaveFocus())
+  })
+
+  it('opens a real enrolled student directly from the trainer roster', async () => {
+    enrollment.listEnrolledStudents.mockResolvedValue([{
+      userId: '0a258739-7658-4012-b747-0f95dca6372c',
+      displayName: 'Marina Costa',
+      joinedAt: null,
+    }])
+    window.history.replaceState(null, '', '#/students')
+    render(<PrototypeProvider lockedRole="trainer"><TrainerStudentsEnrollment /></PrototypeProvider>)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Abrir acompanhamento de Marina Costa' }))
+
+    expect(window.location.hash).toBe('#/student-detail')
   })
 })

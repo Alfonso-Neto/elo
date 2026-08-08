@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { ArrowRight, Check, Clipboard, Clock3, Link2, LoaderCircle, LogOut, Mail, RefreshCw, ShieldCheck, UserPlus, Users } from 'lucide-react'
 import { Brand, Button, Eyebrow, Modal, PageIntro } from '../components'
 import { useAuth } from '../auth/auth-context'
+import { usePrototype } from '../prototype-context'
 import {
   acceptWorkspaceInvitation,
   createWorkspaceInvitation,
@@ -112,6 +113,7 @@ function initialsFor(name: string) {
 
 export function TrainerStudentsEnrollment() {
   const { membership } = useAuth()
+  const { navigate, setSelectedStudentId } = usePrototype()
   const [students, setStudents] = useState<EnrolledStudent[]>([])
   const [listPhase, setListPhase] = useState<AsyncPhase>('loading')
   const [listError, setListError] = useState<string | null>(null)
@@ -177,6 +179,11 @@ export function TrainerStudentsEnrollment() {
     }
   }
 
+  const openStudent = (student: EnrolledStudent) => {
+    setSelectedStudentId(student.userId)
+    navigate('student-detail')
+  }
+
   return <div className="page enter trainer-enrollment-page">
     <PageIntro
       eyebrow={`SEU ESPAÇO · ${students.length} ${students.length === 1 ? 'ALUNO ATIVO' : 'ALUNOS ATIVOS'}`}
@@ -190,11 +197,12 @@ export function TrainerStudentsEnrollment() {
       {listPhase === 'loading' && <div className="enrollment-loading"><LoaderCircle className="spin" size={23} /><p>Buscando vínculos ativos...</p></div>}
       {listPhase === 'error' && <div className="empty-state compact"><ShieldCheck size={27} /><h3>Não foi possível abrir a base</h3><p>{listError}</p><Button variant="secondary" onClick={() => void loadStudents()}>Tentar novamente</Button></div>}
       {listPhase === 'success' && students.length === 0 && <div className="empty-state"><Users size={29} /><h3>Seu primeiro vínculo começa aqui.</h3><p>Gere um código para o aluno. Ele aparecerá nesta base depois de aceitar.</p><Button variant="secondary" onClick={() => setInviteOpen(true)}><UserPlus size={16} /> Criar convite</Button></div>}
-      {listPhase === 'success' && students.length > 0 && <div className="remote-student-list">{students.map((student) => <article key={student.userId}>
+      {listPhase === 'success' && students.length > 0 && <div className="remote-student-list">{students.map((student) => <button type="button" key={student.userId} onClick={() => openStudent(student)} aria-label={`Abrir acompanhamento de ${student.displayName}`}>
         <span className="person-avatar steady">{initialsFor(student.displayName)}</span>
         <div><strong>{student.displayName}</strong><small>{student.joinedAt ? `Vínculo ativo desde ${new Intl.DateTimeFormat('pt-BR').format(new Date(student.joinedAt))}` : 'Vínculo ativo'}</small></div>
         <span className="tag success"><Check size={12} /> Ativo</span>
-      </article>)}</div>}
+        <ArrowRight className="remote-student-arrow" size={16} aria-hidden="true" />
+      </button>)}</div>}
     </section>
 
     {inviteOpen && <Modal title={invitation ? 'Código pronto para compartilhar.' : 'Convide um aluno.'} eyebrow="VÍNCULO DE HOMOLOGAÇÃO" size="small" onClose={closeInvite}>
