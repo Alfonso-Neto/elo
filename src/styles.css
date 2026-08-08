@@ -7,6 +7,7 @@
   --disp:'Bricolage Grotesque',system-ui,sans-serif; --body:'Inter',system-ui,sans-serif; --mono:'Space Mono',ui-monospace,monospace;
   /* Compatibility aliases for the existing feature layer. */
   --ink-2:#1a2b23; --ink-3:#24382f; --paper-2:var(--sand); --white:var(--surface); --text:var(--ink); --muted:var(--ink-soft);
+  --serif:var(--disp); --sans:var(--body); --sage:var(--pine-bright); --sage-dark:var(--pine); --cream:#e7efe9; --ink-faint:var(--ink-soft);
   --line-dark:#bfc9bf; --lime:var(--pine-bright); --lime-deep:var(--pine-deep); --blue:var(--pine);
   --danger:var(--rose); --warning:var(--amber); --success:var(--pine); --sidebar:268px;
   --shadow:0 22px 54px -20px rgba(20,32,27,.28); --ease:cubic-bezier(.22,1,.36,1);

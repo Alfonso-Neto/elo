@@ -346,6 +346,7 @@ input:not([type='checkbox']):not([type='range']),textarea,select{border-radius:1
 .question-card>header input{min-width:0;background:transparent;font:500 14px/1.35 var(--body)}
 
 @media(max-width:760px){
+  .form-builder-page .builder-actions{grid-template-columns:1fr}
   .question-card>header{grid-template-columns:22px minmax(0,1fr)}
   .question-card>header>span{grid-column:1;grid-row:1;margin-top:23px}
   .question-card>header>label{grid-column:2;grid-row:1;min-width:0}
