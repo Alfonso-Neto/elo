@@ -2,9 +2,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   AlertCircle, ArrowDown, ArrowRight, ArrowUp, Check, ChevronDown, Dumbbell, Eye,
   FileCheck2, FilePlus2, GripVertical, LoaderCircle, Plus, Search, Send, ShieldCheck,
-  Trash2, X,
+  Sparkles, Trash2, X,
 } from 'lucide-react'
 import { useAuth } from '../auth/auth-context'
+import { createAssistantService, type AssistantProposal } from '../assistant/assistant-service'
 import { BackButton, Button, Drawer, Eyebrow, MovementDemo, PageIntro, SectionTitle, SuccessState } from '../components'
 import { exerciseLibrary, formTemplateQuestions, formTemplates, generalForm } from '../data'
 import { listEnrolledStudents, type EnrolledStudent } from '../onboarding/enrollment-service'
@@ -213,12 +214,79 @@ export function LiveFormBuilderScreen() {
   const [sending, setSending] = useState(false)
   const [sent, setSent] = useState(false)
   const [error, setError] = useState('')
+  const [assistantOpen, setAssistantOpen] = useState(false)
+  const [assistantPhase, setAssistantPhase] = useState<'idle' | 'loading' | 'processing' | 'ready' | 'error'>('idle')
+  const [assistantError, setAssistantError] = useState('')
+  const [assistantProposal, setAssistantProposal] = useState<AssistantProposal | null>(null)
+  const [assistantProposalId, setAssistantProposalId] = useState('')
+  const [selectedSuggestions, setSelectedSuggestions] = useState<string[]>([])
+  const [decidingSuggestion, setDecidingSuggestion] = useState(false)
   const assignmentKey = useRef('')
+  const assistantKey = useRef('')
   const changed = () => { assignmentKey.current = ''; setSent(false); setError('') }
   const update = (id: string, patch: Partial<FormQuestion>) => { changed(); setFormQuestions((items) => items.map((item) => item.id === id ? { ...item, ...patch } : item)) }
   const add = (question?: Partial<FormQuestion>) => { changed(); setFormQuestions((items) => [...items, { id: `q-${Date.now()}-${items.length}`, label: question?.label ?? '', type: question?.type ?? 'text', options: question?.options, required: question?.required ?? false }]) }
   const move = (index: number, direction: number) => { changed(); setFormQuestions((items) => { const next = [...items]; const destination = index + direction; if (destination < 0 || destination >= next.length) return items; [next[index], next[destination]] = [next[destination], next[index]]; return next }) }
   const valid = Boolean(formTitle.trim()) && formQuestions.length > 0 && formQuestions.every((question) => question.label.trim() && (!['single','multi'].includes(question.type) || Boolean(question.options?.length && question.options.every((option) => option.trim()))))
+  const requestSuggestions = async () => {
+    if (!target.scope || !target.student || assistantPhase === 'loading') return
+    const key = assistantKey.current || createIdempotencyKey('form-question-copilot')
+    assistantKey.current = key
+    setAssistantOpen(true); setAssistantPhase('loading'); setAssistantError('')
+    try {
+      const result = await createAssistantService().requestFormQuestionSuggestions({
+        workspaceId: target.scope.workspaceId,
+        studentId: target.student.userId,
+        title: formTitle.trim() || 'Nova anamnese',
+        existingQuestions: formQuestions.map((question) => question.label).filter((label) => label.trim()),
+        idempotencyKey: key,
+      })
+      if (result.state === 'processing') {
+        setAssistantPhase('processing')
+        return
+      }
+      setAssistantProposal(result.proposal)
+      setAssistantProposalId(result.proposalId)
+      setSelectedSuggestions(result.proposal.questions.map((question) => question.id))
+      setAssistantPhase('ready')
+    } catch (cause) {
+      setAssistantPhase('error')
+      setAssistantError(cause instanceof Error ? cause.message : 'O Copiloto não conseguiu revisar este formulário agora.')
+    }
+  }
+  const closeSuggestions = () => {
+    if (decidingSuggestion) return
+    setAssistantOpen(false)
+  }
+  const decideSuggestions = async (decision: 'accepted' | 'rejected') => {
+    if (!assistantProposalId || !assistantProposal || decidingSuggestion) return
+    setDecidingSuggestion(true); setAssistantError('')
+    try {
+      await createAssistantService().decideProposal({
+        proposalId: assistantProposalId,
+        decision,
+        note: decision === 'accepted' ? 'Perguntas selecionadas para revisão no construtor.' : 'Sugestões descartadas no construtor.',
+      })
+      if (decision === 'accepted') {
+        const existing = new Set(formQuestions.map((question) => question.label.trim().toLocaleLowerCase('pt-BR')))
+        const mapped: FormQuestion[] = []
+        for (const question of assistantProposal.questions) {
+          const normalized = question.question.trim().toLocaleLowerCase('pt-BR')
+          if (!selectedSuggestions.includes(question.id) || existing.has(normalized) || mapped.length >= Math.max(0, 50 - formQuestions.length)) continue
+          existing.add(normalized)
+          mapped.push({ id: `ai-${crypto.randomUUID()}`, label: question.question.trim(), type: question.answer_type === 'yes_no' ? 'yesno' : question.answer_type === 'scale_0_10' ? 'scale' : 'text', required: false })
+        }
+        setFormQuestions((items) => [...items, ...mapped])
+        notify('Sugestões adicionadas ao rascunho', `${mapped.length} ${mapped.length === 1 ? 'pergunta foi incluída' : 'perguntas foram incluídas'} para sua edição. Nada foi enviado ao aluno.`)
+      } else {
+        notify('Sugestões descartadas', 'A decisão foi registrada e nenhuma pergunta foi adicionada.')
+      }
+      assistantKey.current = ''
+      setAssistantOpen(false); setAssistantPhase('idle'); setAssistantProposal(null); setAssistantProposalId(''); setSelectedSuggestions([])
+    } catch (cause) {
+      setAssistantError(cause instanceof Error ? cause.message : 'Não foi possível registrar sua decisão.')
+    } finally { setDecidingSuggestion(false) }
+  }
   const send = async () => {
     if (!target.scope || !target.student || !valid || sending) return
     const key = assignmentKey.current || createIdempotencyKey('assign-anamnesis')
@@ -233,12 +301,13 @@ export function LiveFormBuilderScreen() {
   }
 
   if (target.phase !== 'ready' || !target.student || !target.scope) return <div className="page enter"><TargetState phase={target.phase} error={target.error} onRetry={() => void target.reload()} /></div>
-  return <div className="page form-builder-page live-training-screen enter"><BackButton onClick={() => navigate('forms')} label="Voltar para anamneses" /><PageIntro eyebrow={`CONSTRUTOR · ${target.student.displayName.toUpperCase()}`} title="Cada pergunta tem um motivo." copy="Colete somente o necessário. O aluno verá a finalidade e confirmará o consentimento antes de responder." action={<div className="builder-actions"><Button variant="secondary" onClick={() => setPreview(true)}><Eye size={16} /> Pré-visualizar</Button><Button disabled={!valid || sending} onClick={() => void send()}>{sending ? <LoaderCircle className="spin" size={16} /> : <Send size={16} />} Enviar</Button></div>} />
+  return <div className="page form-builder-page live-training-screen enter"><BackButton onClick={() => navigate('forms')} label="Voltar para anamneses" /><PageIntro eyebrow={`CONSTRUTOR · ${target.student.displayName.toUpperCase()}`} title="Cada pergunta tem um motivo." copy="Colete somente o necessário. O aluno verá a finalidade e confirmará o consentimento antes de responder." action={<div className="builder-actions"><Button variant="secondary" onClick={() => void requestSuggestions()}><Sparkles size={16} /> Revisar lacunas</Button><Button variant="secondary" onClick={() => setPreview(true)}><Eye size={16} /> Pré-visualizar</Button><Button disabled={!valid || sending} onClick={() => void send()}>{sending ? <LoaderCircle className="spin" size={16} /> : <Send size={16} />} Enviar</Button></div>} />
     <section className="form-meta"><label><span>TÍTULO DO FORMULÁRIO</span><input value={formTitle} onChange={(event) => { changed(); setFormTitle(event.target.value.slice(0,90)) }} /></label><div><strong>{formQuestions.length}</strong><span>perguntas</span></div></section>
     <div className="question-builder-list">{formQuestions.map((question,index) => <article key={question.id} className="question-card"><header><GripVertical size={17} /><span>{String(index + 1).padStart(2,'0')}</span><label><span>PERGUNTA</span><input value={question.label} onChange={(event) => update(question.id,{ label:event.target.value.slice(0,180) })} placeholder="Escreva uma pergunta clara..." /></label><div className="question-actions"><button onClick={() => move(index,-1)} disabled={index === 0} aria-label="Mover pergunta para cima"><ArrowUp size={15} /></button><button onClick={() => move(index,1)} disabled={index === formQuestions.length - 1} aria-label="Mover pergunta para baixo"><ArrowDown size={15} /></button><button className="danger-action" onClick={() => { changed(); setFormQuestions((items) => items.filter((item) => item.id !== question.id)) }} aria-label="Remover pergunta"><Trash2 size={15} /></button></div></header><div className="question-types">{questionTypes.map((type) => <button className={question.type === type.value ? 'active' : ''} aria-pressed={question.type === type.value} key={type.value} onClick={() => update(question.id,{ type:type.value, options:['single','multi'].includes(type.value) ? question.options ?? ['Opção 1','Opção 2'] : undefined })}>{type.label}</button>)}</div>{['single','multi'].includes(question.type) && <div className="options-editor">{(question.options ?? []).map((option,optionIndex) => <label key={`${question.id}-${optionIndex}`}><i /><input value={option} onChange={(event) => update(question.id,{ options:question.options?.map((item,i) => i === optionIndex ? event.target.value.slice(0,120) : item) })} /><button onClick={() => update(question.id,{ options:question.options?.filter((_,i) => i !== optionIndex) })} aria-label="Remover opção"><X size={14} /></button></label>)}<button onClick={() => update(question.id,{ options:[...(question.options ?? []),`Opção ${(question.options?.length ?? 0) + 1}`] })}>+ adicionar opção</button></div>}<footer><label className="switch-label"><input type="checkbox" checked={question.required ?? false} onChange={(event) => update(question.id,{ required:event.target.checked })} /><i /><span>Resposta obrigatória</span></label></footer></article>)}</div>
     <button className="add-block" onClick={() => add()}><Plus size={19} /><span><strong>Adicionar pergunta</strong><small>Texto, escolha, escala, sim/não ou número</small></span></button>
     {!valid && <p className="builder-validation"><AlertCircle size={15} /> Informe o título, as perguntas e todas as opções necessárias.</p>}{error && <p className="builder-validation" role="alert"><AlertCircle size={15} /> {error}</p>}
     {sent && <SuccessState title="Anamnese atribuída." copy="Ela já está disponível para o aluno. As perguntas desta versão não poderão ser alteradas." action={<Button onClick={() => navigate('forms')}>Ver histórico <ArrowRight size={16} /></Button>} />}
+    {assistantOpen && <Drawer title="Lacunas para o seu olhar" eyebrow="COPILOTO · NADA ENTRA SOZINHO" onClose={closeSuggestions}>{assistantPhase === 'loading' && <div className="live-loading"><LoaderCircle className="spin" size={22} /><p>Revisando somente o título e as perguntas deste rascunho...</p></div>}{assistantPhase === 'processing' && <div className="empty-state compact"><Sparkles size={26} /><h3>A revisão ainda está sendo preparada.</h3><p>Nenhuma pergunta foi adicionada. Use a mesma solicitação para consultar novamente.</p><Button variant="secondary" onClick={() => void requestSuggestions()}>Verificar novamente</Button></div>}{assistantPhase === 'error' && <div className="empty-state compact"><ShieldCheck size={26} /><h3>O Copiloto não abriu agora.</h3><p>{assistantError}</p><Button variant="secondary" onClick={() => void requestSuggestions()}>Tentar novamente</Button></div>}{assistantPhase === 'ready' && assistantProposal && <><p className="modal-lead">{assistantProposal.summary}</p><div className="assistant-question-suggestions">{assistantProposal.questions.map((question) => { const selected = selectedSuggestions.includes(question.id); return <button key={question.id} className={selected ? 'selected' : ''} aria-pressed={selected} onClick={() => setSelectedSuggestions((items) => items.includes(question.id) ? items.filter((id) => id !== question.id) : [...items, question.id])}><i>{selected && <Check size={13} />}</i><span><strong>{question.question}</strong><small>{question.reason}</small></span></button> })}</div>{assistantProposal.uncertainties.length > 0 && <div className="copilot-uncertainties"><Eyebrow>LIMITES DESTA REVISÃO</Eyebrow>{assistantProposal.uncertainties.map((item) => <p key={item}>{item}</p>)}</div>}{assistantError && <p className="builder-validation" role="alert"><AlertCircle size={15} /> {assistantError}</p>}<div className="suggestion-decisions"><Button variant="ghost" disabled={decidingSuggestion} onClick={() => void decideSuggestions('rejected')}>Descartar tudo</Button><Button disabled={decidingSuggestion || selectedSuggestions.length === 0} onClick={() => void decideSuggestions('accepted')}>{decidingSuggestion ? <LoaderCircle className="spin" size={16} /> : <Check size={16} />} Adicionar {selectedSuggestions.length} ao rascunho</Button></div><p className="anchor-copy">O Copiloto propõe; você seleciona, edita e decide se envia.</p></>}</Drawer>}
     {preview && <Drawer title={formTitle || 'Anamnese sem título'} eyebrow={`COMO ${target.student.displayName.split(/\s+/)[0].toUpperCase()} RESPONDERÁ`} onClose={() => setPreview(false)}><div className="consent-mini"><ShieldCheck size={18} /><span><strong>Consentimento explícito</strong><small>Dado de saúde · finalidade restrita ao acompanhamento.</small></span></div><FormPreview questions={formQuestions} /><Button className="wide" disabled={!valid || sending} onClick={() => void send()}>Confirmar e enviar</Button></Drawer>}
   </div>
 }

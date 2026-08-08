@@ -103,4 +103,36 @@ describe('assistant client boundary', () => {
       idempotencyKey: key,
     })).rejects.toMatchObject({ code: 'validation' })
   })
+
+  it('requests bounded form gaps and refuses any automatic workout action', async () => {
+    const formProposal: AssistantProposal = {
+      ...proposal,
+      urgency: 'routine',
+      questions: [{ id: 'sleep', question: 'Como está a qualidade do seu sono?', reason: 'Ajuda a contextualizar recuperação.', answer_type: 'scale_0_10' }],
+      workout_changes: [],
+    }
+    const { boundary, invoke } = boundaryWith({ run_id: runId, proposal_id: proposalId, completion_mode: 'model', proposal: formProposal })
+    const service = createAssistantService(boundary)
+    await expect(service.requestFormQuestionSuggestions({
+      workspaceId,
+      studentId,
+      title: '  Contexto inicial  ',
+      existingQuestions: ['  Qual é seu objetivo principal?  '],
+      idempotencyKey: key,
+    })).resolves.toMatchObject({ state: 'complete', proposalId })
+    expect(invoke).toHaveBeenCalledWith(expect.objectContaining({
+      kind: 'trainer_copilot',
+      report: expect.stringContaining('FORM_BUILDER_CONTEXT_V1'),
+      context: expect.objectContaining({ constraints: expect.arrayContaining(['Não sugerir nem aplicar mudanças de treino.']) }),
+    }), key)
+
+    const unsafe = boundaryWith({ run_id: runId, proposal_id: proposalId, completion_mode: 'model', proposal })
+    await expect(createAssistantService(unsafe.boundary).requestFormQuestionSuggestions({
+      workspaceId,
+      studentId,
+      title: 'Contexto inicial',
+      existingQuestions: [],
+      idempotencyKey: key,
+    })).rejects.toMatchObject({ code: 'unavailable' })
+  })
 })

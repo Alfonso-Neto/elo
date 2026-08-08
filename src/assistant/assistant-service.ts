@@ -46,6 +46,14 @@ export type TrainerCopilotContext = {
   current_workout?: Array<{ exercise: string; sets: number; reps: string; load?: string; rpe?: number }>
 }
 
+export type FormQuestionSuggestionCommand = {
+  workspaceId: string
+  studentId: string
+  title: string
+  existingQuestions: string[]
+  idempotencyKey: string
+}
+
 export type AssistantBoundary = {
   invoke: (body: Record<string, unknown>, idempotencyKey: string) => Promise<{ data: unknown; error: unknown }>
   rpc: (name: string, arguments_: Record<string, unknown>) => Promise<{ data: unknown; error: unknown }>
@@ -229,6 +237,49 @@ export function createAssistantService(boundary: AssistantBoundary = defaultBoun
     }, command.idempotencyKey)
   }
 
+  async function requestFormQuestionSuggestions(command: FormQuestionSuggestionCommand) {
+    assertCommand(command.workspaceId, command.studentId, command.idempotencyKey)
+    if (!text(command.title, 2, 120) || !Array.isArray(command.existingQuestions) || command.existingQuestions.length > 50) {
+      throw new AssistantServiceError('validation')
+    }
+    const title = command.title.trim()
+    const questions = command.existingQuestions.map((question) => {
+      if (!text(question, 2, 180) || /[\u0000-\u001f\u007f-\u009f]/.test(question)) throw new AssistantServiceError('validation')
+      return question.trim()
+    })
+    const included = questions.slice(0, 12)
+    const report = [
+      'FORM_BUILDER_CONTEXT_V1',
+      `Título da anamnese: ${title}`,
+      included.length ? `Perguntas existentes:\n${included.map((question) => `- ${question}`).join('\n')}` : 'Perguntas existentes: nenhuma.',
+      questions.length > included.length ? `Outras ${questions.length - included.length} perguntas não foram enviadas por minimização.` : '',
+    ].filter(Boolean).join('\n')
+    if (report.length > 2000) throw new AssistantServiceError('validation')
+    const result = await requestTrainerCopilot({
+      workspaceId: command.workspaceId,
+      studentId: command.studentId,
+      report,
+      context: {
+        training_goal: `Revisar lacunas de uma anamnese chamada “${title}”.`,
+        constraints: [
+          'Sugerir somente perguntas curtas e necessárias.',
+          'Não diagnosticar.',
+          'Não sugerir nem aplicar mudanças de treino.',
+          'Não repetir perguntas já existentes.',
+        ],
+      },
+      idempotencyKey: command.idempotencyKey,
+    })
+    if (result.state === 'processing') return result
+    if (
+      result.proposal.workout_changes.length > 0
+      || result.proposal.red_flags.length > 0
+      || result.proposal.questions.length < 1
+      || result.proposal.questions.some((question) => question.question.length > 180)
+    ) throw new AssistantServiceError('unavailable')
+    return result
+  }
+
   async function decideProposal(command: { proposalId: string; decision: 'accepted' | 'rejected' | 'dismissed'; note?: string }) {
     assertUuid(command.proposalId)
     const note = command.note?.trim() || null
@@ -239,5 +290,5 @@ export function createAssistantService(boundary: AssistantBoundary = defaultBoun
     return result.data
   }
 
-  return { requestPainTriage, requestTrainerCopilot, decideProposal }
+  return { requestPainTriage, requestTrainerCopilot, requestFormQuestionSuggestions, decideProposal }
 }

@@ -20,7 +20,8 @@ Hard boundaries:
 - State uncertainties plainly. Ask only decision-relevant follow-up questions. Keep the language calm and direct.
 - The disclaimer must say this is informational, not a diagnosis, and urgent worsening requires emergency care.
 
-For pain_triage, prioritize safe triage and questions. For trainer_copilot, explain a small, reversible proposal; the professor must explicitly review it.`;
+For pain_triage, prioritize safe triage and questions. For trainer_copilot, explain a small, reversible proposal; the professor must explicitly review it.
+When a trainer_copilot report starts with FORM_BUILDER_CONTEXT_V1, propose only concise, non-duplicative anamnesis questions, keep workout_changes and red_flags empty, and never claim that a question was added. The professor selects what to use.`;
 
 type ResponsesPayload = {
   status?: unknown;
