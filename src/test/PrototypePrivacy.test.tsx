@@ -6,12 +6,15 @@ function StateProbe() {
   const {
     addPainReport, assistantEntry, formLastSentDrafts, formSessionDrafts, messages, messageSessionDrafts,
     openExercisePainReport, painReports, setFormLastSentDrafts, setFormSessionDrafts, setMessageSessionDrafts,
-    setWorkoutSessionDrafts, studentWorkout, workoutSessionDrafts,
+    setStudentWorkoutPinnedVersions, setStudentWorkoutSessionDrafts, setWorkoutSessionDrafts, studentWorkout,
+    studentWorkoutPinnedVersions, studentWorkoutSessionDrafts, workoutSessionDrafts,
   } = usePrototype()
   return <div>
     <output>{`pain:${painReports.length} messages:${messages.length} workout:${studentWorkout.length}`}</output>
     <output>{assistantEntry?.movement ?? 'no-assistant-entry'}</output>
     <output>{`drafts:${Object.keys(workoutSessionDrafts).length}`}</output>
+    <output>{`student-workout-drafts:${Object.keys(studentWorkoutSessionDrafts).length}`}</output>
+    <output>{`student-workout-pins:${Object.keys(studentWorkoutPinnedVersions).length}`}</output>
     <output>{`form-drafts:${Object.keys(formSessionDrafts).length}`}</output>
     <output>{`sent-form-drafts:${Object.keys(formLastSentDrafts).length}`}</output>
     <output>{`message-drafts:${Object.keys(messageSessionDrafts).length}`}</output>
@@ -26,6 +29,40 @@ function StateProbe() {
     <button onClick={() => setWorkoutSessionDrafts({
       'remote-student': { title: 'Rascunho privado', exercises: [{ id: 'private', name: 'Movimento confidencial', muscle: 'Teste', sets: '3', reps: '10', load: '', rest: '', tempo: '', rir: '', note: '' }] },
     })}>Keep private session draft</button>
+    <button onClick={() => setStudentWorkoutSessionDrafts({
+      'private-workspace:remote-student:private-version': {
+        completedExerciseIds: ['movimento-confidencial'],
+        elapsedSeconds: 81,
+        runningSince: 1_722_000_000_000,
+        feedback: { rpe: 9, mood: 'Pesado', comment: 'Feedback de saúde confidencial' },
+        completionIdempotencyKey: 'complete-workout-private-key',
+        completion: {
+          state: 'pending',
+          snapshot: {
+            workoutVersionId: 'private-version',
+            workoutTitle: 'Treino confidencial em andamento',
+            completedExerciseIds: ['movimento-confidencial'],
+            rpe: 9,
+            mood: 'Pesado',
+            comment: 'Feedback de saúde confidencial',
+            idempotencyKey: 'complete-workout-private-key',
+          },
+        },
+      },
+    })}>Keep private student workout draft</button>
+    <button onClick={() => setStudentWorkoutPinnedVersions({
+      'private-workspace:remote-student': {
+        id: 'private-version',
+        workspaceId: 'private-workspace',
+        studentUserId: 'remote-student',
+        publishedByUserId: 'private-trainer',
+        publishedByRole: 'trainer',
+        versionNumber: 8,
+        title: 'Treino publicado confidencial',
+        exercises: [{ id: 'private-exercise', name: 'Exercício clínico privado', muscle: 'Teste', sets: '3', reps: '8', load: '', rest: '', tempo: '', rir: '', note: 'Nota técnica reservada' }],
+        publishedAt: '2026-08-08T12:00:00.000Z',
+      },
+    })}>Pin private student workout</button>
     <button onClick={() => {
       const draft = { title: 'Anamnese confidencial', questions: [{ id: 'private-question', label: 'Histórico sensível', type: 'long' as const, required: true }] }
       setFormSessionDrafts({ 'remote-student': draft })
@@ -67,6 +104,18 @@ describe('authenticated workspace privacy boundary', () => {
     expect(screen.getByText('drafts:1')).toBeInTheDocument()
     expect(JSON.stringify({ ...localStorage })).not.toContain('Rascunho privado')
     expect(JSON.stringify({ ...localStorage })).not.toContain('Movimento confidencial')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Keep private student workout draft' }))
+    expect(screen.getByText('student-workout-drafts:1')).toBeInTheDocument()
+    expect(JSON.stringify({ ...localStorage })).not.toContain('movimento-confidencial')
+    expect(JSON.stringify({ ...localStorage })).not.toContain('Feedback de saúde confidencial')
+    expect(JSON.stringify({ ...localStorage })).not.toContain('complete-workout-private-key')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Pin private student workout' }))
+    expect(screen.getByText('student-workout-pins:1')).toBeInTheDocument()
+    expect(JSON.stringify({ ...localStorage })).not.toContain('Treino publicado confidencial')
+    expect(JSON.stringify({ ...localStorage })).not.toContain('Exercício clínico privado')
+    expect(JSON.stringify({ ...localStorage })).not.toContain('Nota técnica reservada')
 
     fireEvent.click(screen.getByRole('button', { name: 'Keep private form draft' }))
     expect(screen.getByText('form-drafts:1')).toBeInTheDocument()

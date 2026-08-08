@@ -1,11 +1,16 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   CalendarDays, Check, CheckCircle2, ChevronRight, Circle, Dumbbell, FileCheck2, HeartPulse,
   LoaderCircle, MessageCircle, Salad, ShieldCheck, TimerReset,
 } from 'lucide-react'
 import { useAuth } from '../auth/auth-context'
 import { BackButton, Button, Drawer, Eyebrow, Modal, MovementDemo, PageIntro, Progress, SuccessState } from '../components'
-import { usePrototype } from '../prototype-context'
+import {
+  usePrototype,
+  type StudentWorkoutCompletionSnapshot,
+  type StudentWorkoutSessionDraft,
+  type StudentWorkoutVersionSnapshot,
+} from '../prototype-context'
 import { createIdempotencyKey, createSignalService } from '../signals'
 import type { PainReportSummary } from '../signals'
 import type { Exercise, FormQuestion } from '../types'
@@ -21,6 +26,58 @@ import './live-training.css'
 
 type DraftAnswers = Record<string, string | string[]>
 type LoadPhase = 'loading' | 'ready' | 'error'
+
+type WorkoutCompletionSnapshot = StudentWorkoutCompletionSnapshot & {
+  sessionKey: string
+  scopeKey: string
+}
+
+const emptyStudentWorkoutSession: StudentWorkoutSessionDraft = {
+  completedExerciseIds: [],
+  elapsedSeconds: 0,
+  runningSince: null,
+  feedback: { rpe: 7, mood: 'Na medida', comment: '' },
+  completionIdempotencyKey: '',
+  completion: { state: 'idle' },
+}
+
+function createStudentWorkoutSession(): StudentWorkoutSessionDraft {
+  return {
+    ...emptyStudentWorkoutSession,
+    completedExerciseIds: [],
+    feedback: { ...emptyStudentWorkoutSession.feedback },
+    completion: { state: 'idle' },
+  }
+}
+
+function elapsedWorkoutSeconds(session: StudentWorkoutSessionDraft, now: number) {
+  const accumulated = Math.max(0, Math.floor(session.elapsedSeconds))
+  if (session.runningSince === null) return accumulated
+  return accumulated + Math.max(0, Math.floor((now - session.runningSince) / 1000))
+}
+
+function matchesCompletionSnapshot(session: StudentWorkoutSessionDraft, snapshot: WorkoutCompletionSnapshot) {
+  const pending = session.completion.state === 'pending' ? session.completion.snapshot : null
+  if (!pending) return false
+  return pending.workoutVersionId === snapshot.workoutVersionId
+    && pending.workoutTitle === snapshot.workoutTitle
+    && pending.idempotencyKey === snapshot.idempotencyKey
+    && pending.rpe === snapshot.rpe
+    && pending.mood === snapshot.mood
+    && pending.comment === snapshot.comment
+    && pending.completedExerciseIds.length === snapshot.completedExerciseIds.length
+    && pending.completedExerciseIds.every((id, index) => id === snapshot.completedExerciseIds[index])
+    && session.completionIdempotencyKey === snapshot.idempotencyKey
+    && session.feedback.rpe === snapshot.rpe
+    && session.feedback.mood === snapshot.mood
+    && session.feedback.comment === snapshot.comment
+    && session.completedExerciseIds.length === snapshot.completedExerciseIds.length
+    && session.completedExerciseIds.every((id, index) => id === snapshot.completedExerciseIds[index])
+}
+
+function snapshotWorkoutVersion(workout: WorkoutVersion): StudentWorkoutVersionSnapshot {
+  return { ...workout, exercises: workout.exercises.map((exercise) => ({ ...exercise })) }
+}
 
 export function buildAnamnesisAnswers(questions: FormQuestion[], draft: DraftAnswers): AnamnesisAnswers | null {
   const answers: AnamnesisAnswers = {}
@@ -42,7 +99,9 @@ export function buildAnamnesisAnswers(questions: FormQuestion[], draft: DraftAns
 }
 
 function studentScope(membership: ReturnType<typeof useAuth>['membership'], profile: ReturnType<typeof useAuth>['profile']): TrainingScope | null {
-  return membership && profile ? { workspaceId: membership.workspaceId, userId: profile.id, role: 'student' } : null
+  return membership?.membershipRole === 'student' && profile?.accountRole === 'student'
+    ? { workspaceId: membership.workspaceId, userId: profile.id, role: 'student' }
+    : null
 }
 
 function LoadFailure({ message, onRetry }: { message: string; onRetry: () => void }) {
@@ -150,67 +209,244 @@ function SectionTitleCompat({ index, title }: { index: string; title: string }) 
 }
 
 export function LiveStudentWorkoutScreen() {
-  const { navigate, notify, openExercisePainReport } = usePrototype()
+  const {
+    navigate, notify, openExercisePainReport, studentWorkoutPinnedVersions, studentWorkoutSessionDrafts,
+    setStudentWorkoutPinnedVersions, setStudentWorkoutSessionDrafts,
+  } = usePrototype()
   const auth = useAuth()
   const scope = studentScope(auth.membership, auth.profile)
+  const scopeKey = scope ? `${scope.workspaceId}:${scope.userId}` : ''
+  const activeScopeKeyRef = useRef(scopeKey)
+  activeScopeKeyRef.current = scopeKey
   const [workout, setWorkout] = useState<WorkoutVersion | null>(null)
   const [phase, setPhase] = useState<LoadPhase>('loading')
+  const [loadedScopeKey, setLoadedScopeKey] = useState('')
   const [error, setError] = useState('')
   const [selected, setSelected] = useState<Exercise | null>(null)
   const [playing, setPlaying] = useState(true)
-  const [completed, setCompleted] = useState<string[]>([])
-  const [started, setStarted] = useState(false)
-  const [seconds, setSeconds] = useState(0)
   const [feedbackOpen, setFeedbackOpen] = useState(false)
-  const [rpe, setRpe] = useState(7)
-  const [mood, setMood] = useState('Na medida')
-  const [comment, setComment] = useState('')
-  const [submitting, setSubmitting] = useState(false)
-  const [submitted, setSubmitted] = useState(false)
-  const completionKey = useRef('')
+  const [timerNow, setTimerNow] = useState(() => Date.now())
+  const loadRequestVersion = useRef(0)
+  const completionRequestVersion = useRef(0)
+  const submitGuard = useRef(false)
 
   const load = async () => {
-    if (!scope) return
-    setPhase('loading'); setError('')
+    const requestVersion = ++loadRequestVersion.current
+    const requestScopeKey = scopeKey
+    setWorkout(null)
+    setLoadedScopeKey('')
+    setSelected(null)
+    setFeedbackOpen(false)
+    setPhase('loading')
+    setError('')
+    if (!scope || !requestScopeKey) return
     try {
-      const next = await getLatestWorkoutVersion(scope)
-      setWorkout(next); setCompleted([]); setSeconds(0); setStarted(false); setSubmitted(false); completionKey.current = ''; setPhase('ready')
+      const pinned = studentWorkoutPinnedVersions[requestScopeKey]
+      const next = pinned ?? await getLatestWorkoutVersion(scope)
+      if (requestVersion !== loadRequestVersion.current || requestScopeKey !== activeScopeKeyRef.current) return
+      setWorkout(next)
+      setLoadedScopeKey(requestScopeKey)
+      setTimerNow(Date.now())
+      setPhase('ready')
     } catch (cause) {
+      if (requestVersion !== loadRequestVersion.current || requestScopeKey !== activeScopeKeyRef.current) return
       setPhase('error'); setError(cause instanceof Error ? cause.message : 'Não foi possível carregar o treino.')
     }
   }
-  useEffect(() => { void load() }, [scope?.workspaceId, scope?.userId])
-  useEffect(() => { if (!started) return; const timer = window.setInterval(() => setSeconds((value) => value + 1), 1000); return () => window.clearInterval(timer) }, [started])
+  useEffect(() => {
+    submitGuard.current = false
+    void load()
+    return () => {
+      loadRequestVersion.current += 1
+      completionRequestVersion.current += 1
+      submitGuard.current = false
+    }
+  }, [scopeKey])
 
-  const changed = () => { completionKey.current = ''; setError('') }
-  const toggle = (id: string) => { changed(); setCompleted((items) => items.includes(id) ? items.filter((item) => item !== id) : [...items, id]) }
+  const sessionKey = scope && workout ? `${scope.workspaceId}:${scope.userId}:${workout.id}` : ''
+  const session = sessionKey ? studentWorkoutSessionDrafts[sessionKey] ?? emptyStudentWorkoutSession : emptyStudentWorkoutSession
+  const validExerciseIds = new Set(workout?.exercises.map((exercise) => exercise.id) ?? [])
+  const completed = session.completedExerciseIds.filter((id) => validExerciseIds.has(id))
+  const started = session.runningSince !== null
+  const seconds = elapsedWorkoutSeconds(session, timerNow)
+  const { rpe, mood, comment } = session.feedback
+  const submitting = session.completion.state === 'pending'
+  const receipt = session.completion.state === 'succeeded' ? session.completion.receipt : null
+
+  const updateSession = useCallback((update: (current: StudentWorkoutSessionDraft) => StudentWorkoutSessionDraft) => {
+    if (!sessionKey) return
+    setStudentWorkoutSessionDrafts((current) => {
+      const exists = Boolean(current[sessionKey])
+      const previous = current[sessionKey] ?? createStudentWorkoutSession()
+      const next = update(previous)
+      return next === previous && exists ? current : { ...current, [sessionKey]: next }
+    })
+  }, [sessionKey, setStudentWorkoutSessionDrafts])
+
+  const pinWorkout = useCallback(() => {
+    if (!scopeKey || !workout) return
+    setStudentWorkoutPinnedVersions((current) => current[scopeKey]
+      ? current
+      : { ...current, [scopeKey]: snapshotWorkoutVersion(workout) })
+  }, [scopeKey, setStudentWorkoutPinnedVersions, workout])
+
+  useEffect(() => {
+    setTimerNow(Date.now())
+    if (!started) return
+    const timer = window.setInterval(() => setTimerNow(Date.now()), 1000)
+    return () => window.clearInterval(timer)
+  }, [sessionKey, session.runningSince, started])
+
+  const changePayload = (update: (current: StudentWorkoutSessionDraft) => StudentWorkoutSessionDraft) => {
+    if (session.completion.state !== 'idle') return
+    pinWorkout()
+    setError('')
+    updateSession((current) => current.completion.state === 'idle'
+      ? { ...update(current), completionIdempotencyKey: '', completion: { state: 'idle' } }
+      : current)
+  }
+  const toggle = (id: string) => {
+    if (!validExerciseIds.has(id)) return
+    changePayload((current) => {
+      const currentCompleted = current.completedExerciseIds.filter((exerciseId) => validExerciseIds.has(exerciseId))
+      return {
+        ...current,
+        completedExerciseIds: currentCompleted.includes(id)
+          ? currentCompleted.filter((exerciseId) => exerciseId !== id)
+          : [...currentCompleted, id],
+      }
+    })
+  }
+  const updateFeedback = (feedback: Partial<StudentWorkoutSessionDraft['feedback']>) => {
+    changePayload((current) => ({ ...current, feedback: { ...current.feedback, ...feedback } }))
+  }
+  const toggleTimer = () => {
+    if (session.completion.state !== 'idle') return
+    pinWorkout()
+    const now = Date.now()
+    setTimerNow(now)
+    updateSession((current) => {
+      if (current.completion.state !== 'idle') return current
+      return current.runningSince === null
+        ? { ...current, runningSince: now }
+        : { ...current, elapsedSeconds: elapsedWorkoutSeconds(current, now), runningSince: null }
+    })
+  }
   const submit = async () => {
-    if (!scope || !workout || submitting) return
-    const key = completionKey.current || createIdempotencyKey('complete-workout')
-    completionKey.current = key
-    setSubmitting(true); setError('')
+    if (!scope || !workout || !sessionKey || submitting || receipt || submitGuard.current) return
+    submitGuard.current = true
+    pinWorkout()
+    const key = session.completionIdempotencyKey || createIdempotencyKey('complete-workout')
+    const normalizedMood = mood.trim()
+    const normalizedComment = comment.trim()
+    const snapshot: WorkoutCompletionSnapshot = {
+      sessionKey,
+      scopeKey,
+      workoutVersionId: workout.id,
+      workoutTitle: workout.title,
+      completedExerciseIds: [...completed],
+      rpe,
+      mood: normalizedMood,
+      comment: normalizedComment,
+      idempotencyKey: key,
+    }
+    const sharedSnapshot: StudentWorkoutCompletionSnapshot = {
+      workoutVersionId: snapshot.workoutVersionId,
+      workoutTitle: snapshot.workoutTitle,
+      completedExerciseIds: [...snapshot.completedExerciseIds],
+      rpe: snapshot.rpe,
+      mood: snapshot.mood,
+      comment: snapshot.comment,
+      idempotencyKey: snapshot.idempotencyKey,
+    }
+    const requestVersion = ++completionRequestVersion.current
+    const now = Date.now()
+    setStudentWorkoutSessionDrafts((current) => {
+      const active = current[sessionKey] ?? createStudentWorkoutSession()
+      if (active.completion.state !== 'idle') return current
+      return {
+        ...current,
+        [sessionKey]: {
+          ...active,
+          completedExerciseIds: [...snapshot.completedExerciseIds],
+          elapsedSeconds: elapsedWorkoutSeconds(active, now),
+          runningSince: null,
+          feedback: { rpe: snapshot.rpe, mood: snapshot.mood, comment: snapshot.comment },
+          completionIdempotencyKey: key,
+          completion: { state: 'pending', snapshot: sharedSnapshot },
+        },
+      }
+    })
+    setTimerNow(now)
+    setError('')
     try {
-      await completeWorkoutVersion(scope, { workoutVersionId: workout.id, rpe, mood, comment, completedExerciseIds: completed, idempotencyKey: key })
-      setSubmitted(true); setFeedbackOpen(false); setStarted(false)
-      notify('Treino concluído', `Seu professor recebeu o feedback de esforço ${rpe}/10.`)
+      await completeWorkoutVersion(scope, {
+        workoutVersionId: snapshot.workoutVersionId,
+        rpe: snapshot.rpe,
+        mood: snapshot.mood,
+        comment: snapshot.comment,
+        completedExerciseIds: snapshot.completedExerciseIds,
+        idempotencyKey: snapshot.idempotencyKey,
+      })
+      setStudentWorkoutSessionDrafts((current) => {
+        const active = current[snapshot.sessionKey]
+        if (!active || !matchesCompletionSnapshot(active, snapshot)) return current
+        return {
+          ...current,
+          [snapshot.sessionKey]: {
+            ...createStudentWorkoutSession(),
+            completion: {
+              state: 'succeeded',
+              receipt: {
+                workoutTitle: snapshot.workoutTitle,
+                rpe: snapshot.rpe,
+                completedExerciseCount: snapshot.completedExerciseIds.length,
+              },
+            },
+          },
+        }
+      })
+      const isCurrent = requestVersion === completionRequestVersion.current
+        && snapshot.scopeKey === activeScopeKeyRef.current
+      if (isCurrent) {
+        setFeedbackOpen(false)
+        setError('')
+      }
+      notify('Treino concluído', `Seu professor recebeu o feedback de esforço ${snapshot.rpe}/10.`)
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Não foi possível enviar o feedback agora.')
-    } finally { setSubmitting(false) }
+      const message = cause instanceof Error ? cause.message : 'Não foi possível enviar o feedback agora.'
+      setStudentWorkoutSessionDrafts((current) => {
+        const active = current[snapshot.sessionKey]
+        if (!active || !matchesCompletionSnapshot(active, snapshot)) return current
+        return {
+          ...current,
+          [snapshot.sessionKey]: { ...active, completion: { state: 'idle' } },
+        }
+      })
+      if (requestVersion !== completionRequestVersion.current || snapshot.scopeKey !== activeScopeKeyRef.current) {
+        notify('Conclusão não registrada', message)
+        return
+      }
+      setError(message)
+    } finally {
+      submitGuard.current = false
+    }
   }
 
-  if (phase === 'loading') return <div className="page enter"><div className="live-loading"><LoaderCircle className="spin" size={24} /><p>Carregando seu treino publicado...</p></div></div>
+  if (!scope) return <div className="page enter"><div className="empty-state"><ShieldCheck size={29} /><h3>Treino indisponível.</h3><p>Entre com uma conta de aluno vinculada para abrir esta área protegida.</p></div></div>
   if (phase === 'error') return <div className="page enter"><LoadFailure message={error} onRetry={() => void load()} /></div>
+  if (phase === 'loading' || loadedScopeKey !== scopeKey) return <div className="page enter"><div className="live-loading"><LoaderCircle className="spin" size={24} /><p>Carregando seu treino publicado...</p></div></div>
   if (!workout) return <div className="page enter"><BackButton onClick={() => navigate('today')} label="Voltar para hoje" /><div className="empty-state"><Dumbbell size={30} /><h3>Seu primeiro treino ainda não foi publicado.</h3><p>Quando seu professor confirmar uma prescrição, ela aparecerá aqui como uma versão protegida.</p></div></div>
-  if (submitted) return <div className="page enter"><SuccessState title="Feedback entregue." copy={`Treino “${workout.title}” · esforço ${rpe}/10 · ${completed.length} exercícios marcados. O registro é imutável.`} action={<div className="success-actions"><Button onClick={() => navigate('today')}>Voltar para hoje</Button><Button variant="secondary" onClick={() => { setSubmitted(false); completionKey.current = '' }}>Rever treino</Button></div>} /></div>
+  if (receipt) return <div className="page enter"><SuccessState title="Feedback entregue." copy={`Treino “${receipt.workoutTitle}” · esforço ${receipt.rpe}/10 · ${receipt.completedExerciseCount} exercícios marcados. O registro é imutável.`} action={<Button onClick={() => navigate('today')}>Voltar para hoje</Button>} /></div>
 
   const progress = Math.round((completed.length / Math.max(workout.exercises.length, 1)) * 100)
-  return <div className="page workout-page live-training-screen enter"><BackButton onClick={() => navigate('today')} label="Voltar para hoje" /><PageIntro eyebrow={`TREINO PUBLICADO · VERSÃO ${workout.versionNumber}`} title={workout.title} copy={`Prescrição do seu professor em ${new Intl.DateTimeFormat('pt-BR',{ dateStyle:'short' }).format(new Date(workout.publishedAt))}. Seus registros de execução não alteram esta versão.`} action={<div className="workout-timer"><TimerReset size={18} /><span><strong>{String(Math.floor(seconds/60)).padStart(2,'0')}:{String(seconds%60).padStart(2,'0')}</strong><small>{started ? 'EM ANDAMENTO' : 'PRONTO'}</small></span><Button onClick={() => setStarted((value) => !value)}>{started ? 'Pausar' : 'Começar'}</Button></div>} />
+  return <div className="page workout-page live-training-screen enter"><BackButton onClick={() => navigate('today')} label="Voltar para hoje" /><PageIntro eyebrow={`TREINO PUBLICADO · VERSÃO ${workout.versionNumber}`} title={workout.title} copy={`Prescrição do seu professor em ${new Intl.DateTimeFormat('pt-BR',{ dateStyle:'short' }).format(new Date(workout.publishedAt))}. Seus registros de execução não alteram esta versão.`} action={<div className="workout-timer"><TimerReset size={18} /><span><strong>{String(Math.floor(seconds/60)).padStart(2,'0')}:{String(seconds%60).padStart(2,'0')}</strong><small>{started ? 'EM ANDAMENTO' : 'PRONTO'}</small></span><Button disabled={submitting} onClick={toggleTimer}>{started ? 'Pausar' : 'Começar'}</Button></div>} />
     <div className="workout-progress"><div><span><strong>{completed.length} de {workout.exercises.length}</strong> exercícios</span><b>{progress}%</b></div><Progress value={progress} label="Progresso do treino" /></div>
-    <div className="student-exercise-list">{workout.exercises.map((exercise,index) => { const done = completed.includes(exercise.id); return <article className={done ? 'done' : ''} key={exercise.id}><button className="complete-exercise" onClick={() => toggle(exercise.id)} aria-label={done ? `Desmarcar ${exercise.name}` : `Concluir ${exercise.name}`}>{done ? <Check size={18} /> : <Circle size={18} />}</button><span className="exercise-order">{String(index + 1).padStart(2,'0')}</span><button className="exercise-info" onClick={() => setSelected(exercise)}><span className="exercise-glyph"><Dumbbell size={18} /></span><span><strong>{exercise.name}</strong><small>{exercise.sets} séries × {exercise.reps} · {exercise.load} · {exercise.rest}</small></span>{exercise.suggested && <span className="tag success">REVISADO</span>}<ChevronRight size={17} /></button></article> })}</div>
-    <Button className="finish-workout" onClick={() => setFeedbackOpen(true)}><CheckCircle2 size={17} /> Finalizar e enviar feedback</Button>
+    <div className="student-exercise-list">{workout.exercises.map((exercise,index) => { const done = completed.includes(exercise.id); return <article className={done ? 'done' : ''} key={exercise.id}><button className="complete-exercise" disabled={submitting} onClick={() => toggle(exercise.id)} aria-label={done ? `Desmarcar ${exercise.name}` : `Concluir ${exercise.name}`}>{done ? <Check size={18} /> : <Circle size={18} />}</button><span className="exercise-order">{String(index + 1).padStart(2,'0')}</span><button className="exercise-info" disabled={submitting} onClick={() => { pinWorkout(); setSelected(exercise) }}><span className="exercise-glyph"><Dumbbell size={18} /></span><span><strong>{exercise.name}</strong><small>{exercise.sets} séries × {exercise.reps} · {exercise.load} · {exercise.rest}</small></span>{exercise.suggested && <span className="tag success">REVISADO</span>}<ChevronRight size={17} /></button></article> })}</div>
+    <Button className="finish-workout" disabled={submitting} onClick={() => { pinWorkout(); setFeedbackOpen(true) }}><CheckCircle2 size={17} /> Finalizar e enviar feedback</Button>
     {error && <p className="builder-validation" role="alert"><AlertCircleIcon /> {error}</p>}
-    {selected && <Drawer title={selected.name} eyebrow="EXECUÇÃO E PARÂMETROS" onClose={() => setSelected(null)}><MovementDemo name={selected.name} playing={playing} onToggle={() => setPlaying((value) => !value)} /><div className="exercise-stats">{[['Séries',selected.sets],['Reps',selected.reps],['Carga',selected.load],['Descanso',selected.rest],['Cadência',selected.tempo],['RIR',selected.rir]].map(([label,value]) => <div key={label}><strong>{value}</strong><small>{label}</small></div>)}</div><div className="trainer-note"><Eyebrow>RECADO DO SEU PROFESSOR</Eyebrow><p>{selected.note || 'Sem observação adicional.'}</p></div><Button variant="secondary" className="wide" onClick={() => { const movement = selected.name; setSelected(null); openExercisePainReport(movement) }}><HeartPulse size={16} /> Senti dor neste exercício</Button></Drawer>}
-    {feedbackOpen && <Modal title="Como foi para você?" eyebrow="FEEDBACK PÓS-TREINO" onClose={() => !submitting && setFeedbackOpen(false)} size="small"><div className="feedback-form"><label><span>Esforço percebido</span><strong>{rpe}/10</strong><input type="range" min="0" max="10" value={rpe} onChange={(event) => { changed(); setRpe(Number(event.target.value)) }} /></label><div className="mood-options" role="group" aria-label="Sensação após o treino">{['Leve','Na medida','Pesado'].map((option) => <button className={mood === option ? 'active' : ''} onClick={() => { changed(); setMood(option) }} aria-pressed={mood === option} key={option}>{option}</button>)}</div><label><span>Quer acrescentar algo?</span><textarea value={comment} onChange={(event) => { changed(); setComment(event.target.value.slice(0,1000)) }} placeholder="Opcional: dificuldade, conquista ou contexto útil..." /></label>{error && <p className="form-error" role="alert">{error}</p>}<Button className="wide" disabled={submitting} onClick={() => void submit()}>{submitting ? <LoaderCircle className="spin" size={16} /> : <CheckCircle2 size={16} />} Registrar conclusão</Button><small className="immutable-copy">A conclusão cria um registro imutável; ela não modifica a prescrição.</small></div></Modal>}
+    {selected && <Drawer title={selected.name} eyebrow="EXECUÇÃO E PARÂMETROS" onClose={() => !submitting && setSelected(null)}><MovementDemo name={selected.name} playing={playing} onToggle={() => setPlaying((value) => !value)} /><div className="exercise-stats">{[['Séries',selected.sets],['Reps',selected.reps],['Carga',selected.load],['Descanso',selected.rest],['Cadência',selected.tempo],['RIR',selected.rir]].map(([label,value]) => <div key={label}><strong>{value}</strong><small>{label}</small></div>)}</div><div className="trainer-note"><Eyebrow>RECADO DO SEU PROFESSOR</Eyebrow><p>{selected.note || 'Sem observação adicional.'}</p></div><Button variant="secondary" className="wide" disabled={submitting} onClick={() => { const movement = selected.name; pinWorkout(); setSelected(null); openExercisePainReport(movement) }}><HeartPulse size={16} /> Senti dor neste exercício</Button></Drawer>}
+    {(feedbackOpen || submitting) && <Modal title="Como foi para você?" eyebrow="FEEDBACK PÓS-TREINO" onClose={() => !submitting && setFeedbackOpen(false)} size="small"><div className="feedback-form"><label><span>Esforço percebido</span><strong>{rpe}/10</strong><input type="range" min="0" max="10" value={rpe} disabled={submitting} onChange={(event) => updateFeedback({ rpe: Number(event.target.value) })} /></label><div className="mood-options" role="group" aria-label="Sensação após o treino">{['Leve','Na medida','Pesado'].map((option) => <button className={mood === option ? 'active' : ''} disabled={submitting} onClick={() => updateFeedback({ mood: option })} aria-pressed={mood === option} key={option}>{option}</button>)}</div><label><span>Quer acrescentar algo?</span><textarea value={comment} disabled={submitting} onChange={(event) => updateFeedback({ comment: event.target.value.slice(0,1000) })} placeholder="Opcional: dificuldade, conquista ou contexto útil..." /></label>{error && <p className="form-error" role="alert">{error}</p>}<Button className="wide" disabled={submitting} onClick={() => void submit()}>{submitting ? <LoaderCircle className="spin" size={16} /> : <CheckCircle2 size={16} />} Registrar conclusão</Button><small className="immutable-copy">A conclusão cria um registro imutável; ela não modifica a prescrição.</small></div></Modal>}
   </div>
 }
 
