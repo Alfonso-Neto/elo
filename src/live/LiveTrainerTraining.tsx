@@ -1,24 +1,34 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  AlertCircle, ArrowDown, ArrowRight, ArrowUp, Check, ChevronDown, Dumbbell, Eye,
-  FileCheck2, FilePlus2, GripVertical, LoaderCircle, Plus, Search, Send, ShieldCheck,
-  Sparkles, Trash2, X,
+  Activity, AlertCircle, AlertTriangle, ArrowDown, ArrowRight, ArrowUp, Check, ChevronDown,
+  Dumbbell, Eye, FileCheck2, FilePlus2, GripVertical, HeartPulse, Info, LoaderCircle,
+  Plus, Search, Send, ShieldCheck, Sparkles, Trash2, X,
 } from 'lucide-react'
 import { useAuth } from '../auth/auth-context'
-import { createAssistantService, type AssistantProposal } from '../assistant/assistant-service'
+import { createAssistantService, type AssistantProposal, type TrainerCopilotContext } from '../assistant/assistant-service'
+import {
+  applyAssistantProposalToDraft, buildAssistantWorkoutContext, buildBuilderReviewReport,
+  formatStructuredWorkoutFeedback,
+} from '../assistant/workout-proposal'
 import { BackButton, Button, Drawer, Eyebrow, MovementDemo, PageIntro, SectionTitle, SuccessState } from '../components'
 import { exerciseLibrary, formTemplateQuestions, formTemplates, generalForm } from '../data'
 import { listEnrolledStudents, type EnrolledStudent } from '../onboarding/enrollment-service'
 import { usePrototype } from '../prototype-context'
-import { createIdempotencyKey } from '../signals'
+import { createIdempotencyKey, createSignalService } from '../signals'
 import type { Exercise, FormQuestion, QuestionType } from '../types'
 import {
   assignAnamnesis, getLatestWorkoutVersion, listAnamnesisAssignments, listAnamnesisSubmissions,
-  publishWorkoutVersion, type AnamnesisAssignment, type AnamnesisSubmission, type TrainingScope,
+  listWorkoutCompletions, publishWorkoutVersion, type AnamnesisAssignment,
+  type AnamnesisSubmission, type TrainingScope,
 } from './training'
 import './live-training.css'
 
 type LoadPhase = 'loading' | 'ready' | 'error'
+type BuilderReviewPhase = 'idle' | 'loading' | 'processing' | 'complete' | 'error'
+type BuilderReviewCoverage = {
+  signals: 'included' | 'none' | 'unavailable'
+  feedback: 'included' | 'none' | 'unavailable'
+}
 
 function initials(name: string) {
   return name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join('').toUpperCase()
@@ -65,6 +75,74 @@ function TargetPicker({ students, value, onChange, label }: { students: Enrolled
   return <label className="training-target-picker"><span className="person-avatar priority">{initials(student?.displayName ?? 'Aluno')}</span><span><small>{label}</small><select value={value} onChange={(event) => onChange(event.target.value)}>{students.map((item) => <option value={item.userId} key={item.userId}>{item.displayName}</option>)}</select></span></label>
 }
 
+const builderOperationLabels: Record<AssistantProposal['workout_changes'][number]['operation'], string> = {
+  reduce_load_percent: 'Reduzir carga',
+  reduce_volume_percent: 'Reduzir volume',
+  replace_exercise: 'Trocar exercício',
+  remove_exercise: 'Retirar exercício',
+  add_rest_seconds: 'Aumentar descanso',
+  cap_rpe: 'Limitar RPE',
+  pause_session: 'Pausar sessão',
+  request_professional_review: 'Solicitar avaliação profissional',
+}
+
+const builderUrgencyLabels: Record<AssistantProposal['urgency'], string> = {
+  routine: 'ACOMPANHAR',
+  soon: 'REVISAR EM BREVE',
+  urgent: 'PRIORIDADE',
+  emergency: 'INTERROMPER E ENCAMINHAR',
+}
+
+function builderProposalValue(change: AssistantProposal['workout_changes'][number]) {
+  if (change.operation === 'replace_exercise') return change.value_text
+  if (change.value_number === null) return null
+  if (change.operation === 'reduce_load_percent' || change.operation === 'reduce_volume_percent') return `${change.value_number}%`
+  if (change.operation === 'add_rest_seconds') return `+${change.value_number}s`
+  if (change.operation === 'cap_rpe') return `RPE ${change.value_number}`
+  return String(change.value_number)
+}
+
+function BuilderReviewCoverageNote({ coverage }: { coverage: BuilderReviewCoverage }) {
+  const signalLabel = coverage.signals === 'included' ? 'sinal estruturado incluído' : coverage.signals === 'none' ? 'sem relato de dor recente' : 'sinais indisponíveis'
+  const feedbackLabel = coverage.feedback === 'included' ? 'RPE recente incluído' : coverage.feedback === 'none' ? 'sem conclusão recente' : 'feedback indisponível'
+  return <div className="builder-review-coverage" aria-label="Cobertura usada pelo Copiloto"><span><HeartPulse size={14} /> {signalLabel}</span><span><Activity size={14} /> {feedbackLabel}</span></div>
+}
+
+function BuilderCopilotPanel({
+  phase, proposal, decision, error, coverage, deciding, draftCount, onRun, onDecide,
+}: {
+  phase: BuilderReviewPhase
+  proposal: AssistantProposal | null
+  decision: 'accepted' | 'rejected' | null
+  error: string
+  coverage: BuilderReviewCoverage
+  deciding: boolean
+  draftCount: number
+  onRun: () => void
+  onDecide: (decision: 'accepted' | 'rejected') => void
+}) {
+  if (decision) return <SuccessState title={decision === 'accepted' ? 'Revisão registrada no rascunho.' : 'Proposta rejeitada e registrada.'} copy={decision === 'accepted' ? 'Os ajustes aceitos continuam editáveis. Nada foi publicado para o aluno.' : 'O rascunho permaneceu como estava e a decisão ficou auditada.'} />
+  if (phase === 'idle') return <div className="builder-copilot-intro"><span><Sparkles size={23} /></span><Eyebrow>REVISÃO SOB DEMANDA</Eyebrow><h3>Quer um segundo olhar sobre este rascunho?</h3><p>O Copiloto cruza até 20 exercícios com o último sinal estruturado e os RPEs recentes. Ele mostra perguntas, limites e sugestões; você decide o que entra.</p><div className="builder-review-snapshot"><strong>{draftCount}</strong><span><b>{draftCount === 1 ? 'exercício' : 'exercícios'}</b><small>Somente um snapshot minimizado será analisado.</small></span></div><Button className="wide" disabled={draftCount === 0} onClick={onRun}><Sparkles size={16} /> Revisar este rascunho</Button><small className="anchor-copy">A revisão não salva, altera nem publica nada sozinha.</small></div>
+  if (phase === 'loading' || phase === 'processing') return <div className="builder-review-progress" role="status"><LoaderCircle className={phase === 'loading' ? 'spin' : ''} size={24} /><span><strong>{phase === 'loading' ? 'Organizando sinais e parâmetros...' : 'A revisão continua em processamento.'}</strong><small>O rascunho permanece intacto.</small></span>{phase === 'processing' && <Button variant="secondary" onClick={onRun}>Verificar novamente</Button>}</div>
+  if (phase === 'error') return <div className="builder-review-error" role="alert"><Info size={20} /><div><strong>O Copiloto não concluiu esta revisão.</strong><p>{error}</p></div><BuilderReviewCoverageNote coverage={coverage} /><Button variant="secondary" className="wide" onClick={onRun}>Tentar novamente</Button></div>
+  if (!proposal) return null
+
+  return <div className={`builder-review-proposal urgency-${proposal.urgency}`}>
+    <BuilderReviewCoverageNote coverage={coverage} />
+    <article className="builder-review-summary"><Sparkles size={19} /><div><Eyebrow>PROPOSTA · {builderUrgencyLabels[proposal.urgency]}</Eyebrow><h3>{proposal.summary}</h3></div></article>
+    {proposal.red_flags.length > 0 && <div className="builder-review-alerts">{proposal.red_flags.map((flag) => <article key={flag.code}><AlertTriangle size={17} /><span><strong>{flag.label}</strong><p>{flag.evidence}</p><small>{flag.recommended_action}</small></span></article>)}</div>}
+    {proposal.rationale.length > 0 && <section className="builder-review-list"><Eyebrow>POR QUE VALE PENSAR</Eyebrow>{proposal.rationale.map((reason, index) => <article key={`${index}-${reason}`}><span>{String(index + 1).padStart(2, '0')}</span><p>{reason}</p></article>)}</section>}
+    {proposal.questions.length > 0 && <section className="builder-review-list questions"><Eyebrow>PERGUNTAS ANTES DE PUBLICAR</Eyebrow>{proposal.questions.map((question) => <article key={question.id}><span>?</span><p><strong>{question.question}</strong><small>{question.reason}</small></p></article>)}</section>}
+    <section className="builder-review-list changes"><Eyebrow>AJUSTES PROPOSTOS · AINDA NÃO APLICADOS</Eyebrow>{proposal.workout_changes.length ? proposal.workout_changes.map((change, index) => <article key={`${change.operation}-${index}`}><span>{String(index + 1).padStart(2, '0')}</span><p><strong>{builderOperationLabels[change.operation]}{change.target ? ` · ${change.target}` : ''}</strong><small>{builderProposalValue(change) ?? 'Sem valor automático'} · {change.guardrail}{change.duration_sessions ? ` · ${change.duration_sessions} sessões` : ''}</small></p></article>) : <p className="mini-empty">Nenhuma mudança de parâmetro foi proposta; revise as perguntas acima.</p>}</section>
+    {proposal.sources.length > 0 && <section className="builder-review-sources"><Eyebrow>FONTES DECLARADAS</Eyebrow><div>{proposal.sources.map((source) => <span key={`${source.kind}-${source.label}`}><ShieldCheck size={13} /> {source.label}</span>)}</div></section>}
+    {proposal.uncertainties.length > 0 && <section className="builder-review-uncertainties"><Eyebrow>INCERTEZAS DECLARADAS</Eyebrow>{proposal.uncertainties.map((item) => <p key={item}>? {item}</p>)}</section>}
+    <div className="proposal-disclaimer"><Info size={16} /><p>{proposal.disclaimer}</p></div>
+    {error && <p className="builder-validation" role="alert"><AlertTriangle size={15} /> {error}</p>}
+    <footer className="builder-review-actions"><Button variant="ghost" disabled={deciding} onClick={() => onDecide('rejected')}><X size={16} /> Manter meu rascunho</Button><Button disabled={deciding} onClick={() => onDecide('accepted')}>{deciding ? <LoaderCircle className="spin" size={16} /> : <Check size={16} />} Aceitar no rascunho</Button></footer>
+    <p className="anchor-copy">Aceitar registra sua decisão e cria apenas uma edição local. Publicar continua sendo outra ação explícita.</p>
+  </div>
+}
+
 export function LiveWorkoutBuilderScreen() {
   const { navigate, workout: stagedWorkout, workoutName: stagedName, workoutDraftStudentId, setWorkoutDraftStudentId, notify } = usePrototype()
   const target = useTrainerTarget()
@@ -79,8 +157,32 @@ export function LiveWorkoutBuilderScreen() {
   const [libraryQuery, setLibraryQuery] = useState('')
   const [preview, setPreview] = useState<Exercise | null>(null)
   const [playing, setPlaying] = useState(true)
+  const [copilotOpen, setCopilotOpen] = useState(false)
+  const [reviewPhase, setReviewPhase] = useState<BuilderReviewPhase>('idle')
+  const [reviewProposal, setReviewProposal] = useState<AssistantProposal | null>(null)
+  const [reviewProposalId, setReviewProposalId] = useState('')
+  const [reviewDecision, setReviewDecision] = useState<'accepted' | 'rejected' | null>(null)
+  const [reviewError, setReviewError] = useState('')
+  const [reviewCoverage, setReviewCoverage] = useState<BuilderReviewCoverage>({ signals: 'none', feedback: 'none' })
+  const [decidingReview, setDecidingReview] = useState(false)
   const [reloadToken, setReloadToken] = useState(0)
   const publishKey = useRef('')
+  const reviewKey = useRef('')
+  const reviewSnapshot = useRef<{ report: string; context: TrainerCopilotContext } | null>(null)
+  const reviewRequestVersion = useRef(0)
+
+  const resetReview = useCallback(() => {
+    reviewRequestVersion.current += 1
+    reviewKey.current = ''
+    reviewSnapshot.current = null
+    setReviewPhase('idle')
+    setReviewProposal(null)
+    setReviewProposalId('')
+    setReviewDecision(null)
+    setReviewError('')
+    setReviewCoverage({ signals: 'none', feedback: 'none' })
+    setDecidingReview(false)
+  }, [])
 
   useEffect(() => {
     if (!target.scope || !target.selectedStudentId || !target.student) return
@@ -89,6 +191,7 @@ export function LiveWorkoutBuilderScreen() {
     setError('')
     setPublished(false)
     publishKey.current = ''
+    resetReview()
     if (workoutDraftStudentId === target.selectedStudentId && stagedWorkout.length) {
       setDraft(stagedWorkout.map((item) => ({ ...item })))
       setTitle(stagedName)
@@ -111,9 +214,9 @@ export function LiveWorkoutBuilderScreen() {
         setError(cause instanceof Error ? cause.message : 'Não foi possível carregar o treino.')
       })
     return () => { active = false }
-  }, [stagedName, stagedWorkout, target.scope, target.selectedStudentId, target.student, workoutDraftStudentId, setWorkoutDraftStudentId, reloadToken])
+  }, [stagedName, stagedWorkout, target.scope, target.selectedStudentId, target.student, workoutDraftStudentId, setWorkoutDraftStudentId, reloadToken, resetReview])
 
-  const changed = () => { publishKey.current = ''; setPublished(false); setError('') }
+  const changed = () => { publishKey.current = ''; setPublished(false); setError(''); resetReview() }
   const updateExercise = (id: string, key: keyof Exercise, value: string) => { changed(); setDraft((items) => items.map((item) => item.id === id ? { ...item, [key]: value } : item)) }
   const move = (index: number, direction: number) => { changed(); setDraft((items) => { const next = [...items]; const destination = index + direction; if (destination < 0 || destination >= next.length) return items; [next[index], next[destination]] = [next[destination], next[index]]; return next }) }
   const addExercise = (exercise: Exercise) => {
@@ -138,6 +241,113 @@ export function LiveWorkoutBuilderScreen() {
     }
   }
 
+  const runBuilderReview = async () => {
+    if (!target.scope || !target.student || !draft.length || reviewPhase === 'loading') return
+    const requestVersion = ++reviewRequestVersion.current
+    const key = reviewKey.current || createIdempotencyKey('builder-review')
+    reviewKey.current = key
+    setReviewPhase('loading')
+    setReviewError('')
+    try {
+      let snapshot = reviewSnapshot.current
+      if (!snapshot) {
+        const [signalResult, feedbackResult] = await Promise.allSettled([
+          createSignalService().listStudentReports(target.scope.workspaceId, target.student.userId, { limit: 1 }),
+          listWorkoutCompletions(target.scope, target.student.userId, { limit: 4 }),
+        ])
+        if (requestVersion !== reviewRequestVersion.current) return
+        const latestPainReport = signalResult.status === 'fulfilled' ? signalResult.value.items[0] ?? null : null
+        const recentCompletions = feedbackResult.status === 'fulfilled' ? feedbackResult.value.items : []
+        const coverage: BuilderReviewCoverage = {
+          signals: signalResult.status === 'rejected' ? 'unavailable' : latestPainReport ? 'included' : 'none',
+          feedback: feedbackResult.status === 'rejected' ? 'unavailable' : recentCompletions.length ? 'included' : 'none',
+        }
+        setReviewCoverage(coverage)
+        snapshot = {
+          report: buildBuilderReviewReport({
+            title,
+            workout: draft,
+            latestPainReport,
+            signalLookupFailed: coverage.signals === 'unavailable',
+          }),
+          context: {
+            training_goal: `Revisar a coerência do rascunho “${(title.trim() || 'sem título').slice(0, 120)}” sem substituir a decisão profissional.`,
+            recent_feedback: formatStructuredWorkoutFeedback(recentCompletions),
+            constraints: [
+              'Nenhuma mudança pode ser publicada automaticamente.',
+              'Não diagnosticar nem inventar dados ausentes.',
+              'Sugerir apenas ajustes limitados, perguntas e guardrails.',
+              coverage.signals === 'unavailable' ? 'A consulta de sinais falhou; declarar essa incerteza.' : coverage.signals === 'none' ? 'Nenhum relato de dor recente foi encontrado.' : 'Há um relato estruturado recente no contexto.',
+              coverage.feedback === 'unavailable' ? 'A consulta de feedback falhou; declarar essa incerteza.' : coverage.feedback === 'none' ? 'Nenhum RPE recente foi encontrado.' : 'Há feedback estruturado recente no contexto.',
+              ...(draft.length > 20 ? ['O rascunho excede 20 exercícios; a revisão cobre apenas os 20 primeiros.'] : []),
+            ],
+            current_workout: buildAssistantWorkoutContext(draft),
+          },
+        }
+        reviewSnapshot.current = snapshot
+      }
+      const result = await createAssistantService().requestTrainerCopilot({
+        workspaceId: target.scope.workspaceId,
+        studentId: target.student.userId,
+        report: snapshot.report,
+        context: snapshot.context,
+        idempotencyKey: key,
+      })
+      if (requestVersion !== reviewRequestVersion.current) return
+      if (result.state === 'processing') {
+        setReviewPhase('processing')
+        return
+      }
+      setReviewProposal(result.proposal)
+      setReviewProposalId(result.proposalId)
+      setReviewPhase('complete')
+    } catch (cause) {
+      if (requestVersion !== reviewRequestVersion.current) return
+      setReviewPhase('error')
+      setReviewError(cause instanceof Error ? cause.message : 'A revisão não ficou disponível agora.')
+    }
+  }
+
+  const decideBuilderReview = async (decision: 'accepted' | 'rejected') => {
+    if (!reviewProposal || !reviewProposalId || decidingReview) return
+    const requestVersion = reviewRequestVersion.current
+    setDecidingReview(true)
+    setReviewError('')
+    try {
+      await createAssistantService().decideProposal({
+        proposalId: reviewProposalId,
+        decision,
+        note: decision === 'accepted'
+          ? 'Proposta aceita no Copiloto flutuante como edição local; nenhuma publicação automática.'
+          : 'Proposta rejeitada no Copiloto flutuante; rascunho mantido sem alterações.',
+      })
+      if (requestVersion !== reviewRequestVersion.current) return
+      if (decision === 'accepted') {
+        const revisedDraft = applyAssistantProposalToDraft(draft, reviewProposal)
+        setDraft(revisedDraft)
+        setExpanded((current) => revisedDraft.some((item) => item.id === current) ? current : revisedDraft[0]?.id ?? '')
+        publishKey.current = ''
+        setPublished(false)
+        notify('Proposta aplicada ao rascunho', 'Revise cada parâmetro; nada foi publicado para o aluno.')
+      }
+      setReviewDecision(decision)
+    } catch (cause) {
+      if (requestVersion !== reviewRequestVersion.current) return
+      setReviewError(cause instanceof Error ? cause.message : 'Não foi possível registrar sua decisão.')
+    } finally {
+      if (requestVersion === reviewRequestVersion.current) setDecidingReview(false)
+    }
+  }
+
+  const reviewCount = reviewDecision
+    ? 0
+    : reviewProposal
+      ? Math.min(9, Math.max(1, reviewProposal.red_flags.length + reviewProposal.questions.length + reviewProposal.workout_changes.length))
+      : draft.length > 0 ? 1 : 0
+  const reviewButtonLabel = reviewDecision
+    ? 'Abrir revisão concluída do Copiloto'
+    : `Abrir ${reviewCount} ${reviewCount === 1 ? 'ponto' : 'pontos'} para revisar com o Copiloto`
+
   if (target.phase !== 'ready' || !target.student || !target.scope) return <div className="page enter"><TargetState phase={target.phase} error={target.error} onRetry={() => void target.reload()} /></div>
   if (phase === 'loading') return <div className="page enter"><div className="live-loading"><LoaderCircle className="spin" size={23} /><p>Carregando a última versão publicada...</p></div></div>
   if (phase === 'error') return <div className="page enter"><TargetState phase="error" error={error} onRetry={() => setReloadToken((value) => value + 1)} /></div>
@@ -155,6 +365,8 @@ export function LiveWorkoutBuilderScreen() {
     {error && <p className="builder-validation" role="alert"><AlertCircle size={15} /> {error}</p>}
     {published && <div className="live-publish-success"><Check size={18} /><span><strong>Versão publicada com sucesso.</strong><small>Edite qualquer campo para criar uma nova intenção e uma nova chave segura.</small></span></div>}
     <aside className="builder-savebar"><span><ShieldCheck size={16} /><strong>Rascunho somente nesta sessão</strong><small>{canPublish ? 'Pronto para sua confirmação explícita.' : 'Complete os campos essenciais.'}</small></span><Button disabled={!canPublish || publishing} onClick={() => void publish()}>{publishing ? <LoaderCircle className="spin" size={16} /> : <Send size={16} />} Publicar para {target.student.displayName.split(/\s+/)[0]}</Button></aside>
+    <button className={`floating-copilot live-floating-copilot phase-${reviewPhase}`} onClick={() => setCopilotOpen(true)} aria-label={reviewButtonLabel} aria-haspopup="dialog" aria-expanded={copilotOpen}><Sparkles size={22} />{reviewCount > 0 && <b>{reviewCount}</b>}</button>
+    {copilotOpen && <Drawer title={reviewDecision ? 'Revisão concluída' : reviewProposal ? `${reviewCount} ${reviewCount === 1 ? 'ponto para pensar' : 'pontos para pensar'}` : 'Segundo olhar no rascunho'} eyebrow="COPILOTO FLUTUANTE · DECISÃO HUMANA" onClose={() => !decidingReview && setCopilotOpen(false)}><BuilderCopilotPanel phase={reviewPhase} proposal={reviewProposal} decision={reviewDecision} error={reviewError} coverage={reviewCoverage} deciding={decidingReview} draftCount={draft.length} onRun={() => void runBuilderReview()} onDecide={(decision) => void decideBuilderReview(decision)} /></Drawer>}
     {libraryOpen && <Drawer title="Biblioteca de exercícios" eyebrow="ADICIONAR AO RASCUNHO" onClose={() => setLibraryOpen(false)}><label className="search-field modal-search"><Search size={17} /><span className="sr-only">Buscar exercício</span><input autoFocus placeholder="Nome ou grupo muscular..." value={libraryQuery} onChange={(event) => setLibraryQuery(event.target.value)} /></label><div className="library-list">{exerciseLibrary.filter((exercise) => `${exercise.name} ${exercise.muscle}`.toLowerCase().includes(libraryQuery.toLowerCase())).map((exercise) => <button key={exercise.id} onClick={() => addExercise(exercise)}><span className="exercise-glyph"><Dumbbell size={17} /></span><span><strong>{exercise.name}</strong><small>{exercise.muscle}</small></span><Plus size={17} /></button>)}</div></Drawer>}
     {preview && <Drawer title={preview.name} eyebrow="VISÃO DO ALUNO" onClose={() => setPreview(null)}><MovementDemo name={preview.name} playing={playing} onToggle={() => setPlaying((value) => !value)} /><div className="exercise-stats">{[['Séries',preview.sets],['Reps',preview.reps],['Carga',preview.load],['Descanso',preview.rest],['Cadência',preview.tempo],['RIR',preview.rir]].map(([label,value]) => <div key={label}><strong>{value}</strong><small>{label}</small></div>)}</div><div className="trainer-note"><Eyebrow>RECADO DO PROFESSOR</Eyebrow><p>{preview.note || 'Sem observação adicional.'}</p></div></Drawer>}
   </div>

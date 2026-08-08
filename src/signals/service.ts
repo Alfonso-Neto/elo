@@ -431,6 +431,33 @@ export function createSignalService(client: SignalSupabaseClient = requireSupaba
     })
   }
 
+  async function listStudentReports(
+    workspaceId: string,
+    studentUserId: string,
+    options: SignalPageOptions = {},
+  ): Promise<SignalPage<PainReportSummary>> {
+    return runSafely(async () => {
+      assertUuid(workspaceId, 'workspaceId')
+      assertUuid(studentUserId, 'studentUserId')
+      const page = parsePageOptions(options)
+      const { data, error } = await client
+        .from('pain_reports')
+        .select(painReportSummaryColumns)
+        .eq('workspace_id', workspaceId)
+        .eq('student_user_id', studentUserId)
+        .order('created_at', { ascending: false })
+        .order('id', { ascending: false })
+        .range(page.offset, page.offset + page.limit)
+
+      if (error) throw error
+      const reports = rowsFrom(data).map(parsePainReportSummary)
+      if (reports.some((report) => report.workspaceId !== workspaceId || report.studentUserId !== studentUserId)) {
+        throw new SignalDomainError('service_unavailable')
+      }
+      return pageFrom(reports, page.limit, page.offset)
+    })
+  }
+
   async function getPainReport(painReportId: string): Promise<PainReport | null> {
     return runSafely(async () => {
       assertUuid(painReportId, 'painReportId')
@@ -522,6 +549,7 @@ export function createSignalService(client: SignalSupabaseClient = requireSupaba
     createPainReport,
     listOwnReports,
     listWorkspaceReports,
+    listStudentReports,
     getPainReport,
     listPainReportTimeline,
     acknowledgePainReport,

@@ -347,6 +347,21 @@ describe('signal read contracts', () => {
     expect(fake.queryCalls[0].selected).not.toContain('detail')
   })
 
+  it('scopes a trainer signal query to one linked student before rendering it', async () => {
+    const fake = new FakeSignalClient().queueTable('pain_reports', ok([reportRow()]))
+    const service = createSignalService(fake.asClient())
+
+    const page = await service.listStudentReports(workspaceId, userId, { limit: 1 })
+
+    expect(page.items).toHaveLength(1)
+    expect(fake.queryCalls[0]).toMatchObject({
+      table: 'pain_reports',
+      filters: [['workspace_id', workspaceId], ['student_user_id', userId]],
+      range: [0, 1],
+    })
+    expect(fake.queryCalls[0].selected).not.toContain('detail')
+  })
+
   it('rejects cross-student and cross-workspace rows instead of partially rendering them', async () => {
     const ownFake = new FakeSignalClient().queueTable('pain_reports', ok([
       reportRow({ student_user_id: otherUserId }),
@@ -360,6 +375,13 @@ describe('signal read contracts', () => {
     ]))
     await expect(
       createSignalService(workspaceFake.asClient()).listWorkspaceReports(workspaceId),
+    ).rejects.toMatchObject({ code: 'service_unavailable' })
+
+    const studentFake = new FakeSignalClient().queueTable('pain_reports', ok([
+      reportRow({ student_user_id: otherUserId }),
+    ]))
+    await expect(
+      createSignalService(studentFake.asClient()).listStudentReports(workspaceId, userId),
     ).rejects.toMatchObject({ code: 'service_unavailable' })
   })
 
