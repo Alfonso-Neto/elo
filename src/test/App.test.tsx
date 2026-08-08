@@ -40,6 +40,28 @@ describe('Elo validation prototype', () => {
     expect(await screen.findByText(/4 relatos sobre o joelho/i)).toBeInTheDocument()
   })
 
+  it('carries the active exercise into the structured pain flow without locking the answer', async () => {
+    render(<App />)
+    fireEvent.click(screen.getByRole('button', { name: /^Aluna$/i }))
+    fireEvent.click(screen.getAllByRole('button', { name: /^Treino$/i })[0])
+    const exerciseTitle = await screen.findByText('Leg press 45°')
+    fireEvent.click(exerciseTitle.closest('button')!)
+    fireEvent.click(screen.getByRole('button', { name: /Senti dor neste exercício/i }))
+
+    expect(await screen.findByText(/O exercício foi trazido do treino aberto/i)).toBeInTheDocument()
+    expect(screen.getByText('Leg press 45°')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: /Onde você sentiu/i })).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Joelho direito' }))
+    expect(screen.getByRole('heading', { name: /Quando incomodou/i })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: /Em qual movimento/i })).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /Voltar uma etapa/i }))
+    fireEvent.click(screen.getByRole('button', { name: /Trocar movimento/i }))
+    expect(screen.getByRole('heading', { name: /Em qual movimento/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Leg press 45°' })).toBeInTheDocument()
+  })
+
   it('publishes a builder change to the student workout', async () => {
     render(<App />)
     fireEvent.click(screen.getByRole('button', { name: /Treinos/i }))

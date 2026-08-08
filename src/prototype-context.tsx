@@ -5,6 +5,7 @@ import type { ChatMessage, Exercise, FormQuestion, Page, PainReport, Role, Sessi
 type Toast = { title: string; message: string } | null
 type WorkoutFeedback = { rpe: number; mood: string; comment: string; createdAt: string } | null
 type StudentNote = { id: string; studentId: string; text: string; createdAt: string }
+export type AssistantEntry = { kind: 'exercise-pain'; movement: string } | null
 
 type PrototypeContextValue = {
   role: Role
@@ -31,6 +32,7 @@ type PrototypeContextValue = {
   workoutFeedback: WorkoutFeedback
   studentNotes: StudentNote[]
   selectedStudentId: string
+  assistantEntry: AssistantEntry
   toast: Toast
   navigate: (page: Page) => void
   switchRole: (role: Role) => void
@@ -52,6 +54,8 @@ type PrototypeContextValue = {
   submitWorkoutFeedback: (rpe: number, mood: string, comment: string) => void
   addStudentNote: (studentId: string, text: string) => void
   setSelectedStudentId: (id: string) => void
+  openExercisePainReport: (movement: string) => void
+  clearAssistantEntry: () => void
   notify: (title: string, message: string) => void
   resetPrototype: () => void
 }
@@ -116,6 +120,7 @@ export function PrototypeProvider({ children, lockedRole }: { children: ReactNod
   const [workoutFeedback, setWorkoutFeedback] = useState<WorkoutFeedback>(() => demoState('elo-workout-feedback', null, null))
   const [studentNotes, setStudentNotes] = useState<StudentNote[]>(() => demoState('elo-student-notes', [], []))
   const [selectedStudentId, setSelectedStudentId] = useState(isRemote ? '' : 'marina')
+  const [assistantEntry, setAssistantEntry] = useState<AssistantEntry>(null)
   const [toast, setToast] = useState<Toast>(null)
 
   useEffect(() => {
@@ -178,6 +183,7 @@ export function PrototypeProvider({ children, lockedRole }: { children: ReactNod
     return () => window.removeEventListener('storage', sync)
   }, [isRemote])
   useEffect(() => { window.scrollTo({ top: 0, behavior: 'auto' }) }, [page])
+  useEffect(() => { if (page !== 'assistant') setAssistantEntry(null) }, [page])
   useEffect(() => { if (!toast) return; const timer = window.setTimeout(() => setToast(null), 4200); return () => window.clearTimeout(timer) }, [toast])
   useEffect(() => {
     const onHash = () => {
@@ -212,6 +218,13 @@ export function PrototypeProvider({ children, lockedRole }: { children: ReactNod
     document.getElementById('main-content')?.focus()
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
+  const openExercisePainReport = (movement: string) => {
+    const cleanMovement = movement.replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 120)
+    if (!cleanMovement) return
+    setAssistantEntry({ kind: 'exercise-pain', movement: cleanMovement })
+    navigate('assistant')
+  }
+  const clearAssistantEntry = () => setAssistantEntry(null)
   const switchRole = (next: Role) => {
     if (lockedRole) return
     setRole(next)
@@ -258,16 +271,16 @@ export function PrototypeProvider({ children, lockedRole }: { children: ReactNod
     setSessions(initialSessions); setMessages(initialMessages); setFormQuestions(generalForm); setPublishedFormQuestions(generalForm); setFormTitle('Anamnese · contexto inicial'); setPublishedFormTitle('Anamnese geral'); setFormAnswers({}); setCompletedExercises([])
     const resetRole = lockedRole ?? 'trainer'
     const resetPage = homeForRole(resetRole)
-    setCompletedMeals([]); setWater(3); setFormSubmitted(false); setFormSent(true); setWorkoutSent(false); setWorkoutFeedback(null); setStudentNotes([]); setRole(resetRole); setPage(resetPage)
+    setCompletedMeals([]); setWater(3); setFormSubmitted(false); setFormSent(true); setWorkoutSent(false); setWorkoutFeedback(null); setStudentNotes([]); setAssistantEntry(null); setRole(resetRole); setPage(resetPage)
     window.history.replaceState(null, '', `#/${resetPage}`); notify('Protótipo reiniciado', 'Todos os dados voltaram ao cenário inicial.')
   }
 
   const value = useMemo<PrototypeContextValue>(() => ({
     role, page, workout, workoutName, workoutDraftStudentId, studentWorkout, studentWorkoutName, painReports, sessions, messages, formQuestions, publishedFormQuestions, formTitle, publishedFormTitle, formAnswers, completedExercises,
-    completedMeals, water, formSubmitted, formSent, workoutSent, workoutFeedback, studentNotes, selectedStudentId, toast, navigate, switchRole,
+    completedMeals, water, formSubmitted, formSent, workoutSent, workoutFeedback, studentNotes, selectedStudentId, assistantEntry, toast, navigate, switchRole,
     setWorkout, setWorkoutName, setWorkoutDraftStudentId, addPainReport, reviewPainReports, setSessions, addMessage, setFormQuestions, setFormTitle,
-    setCompletedExercises, toggleMeal, setWater, submitForm, sendWorkout, sendForm, submitWorkoutFeedback, addStudentNote, setSelectedStudentId, notify, resetPrototype,
-  }), [role, page, workout, workoutName, workoutDraftStudentId, studentWorkout, studentWorkoutName, painReports, sessions, messages, formQuestions, publishedFormQuestions, formTitle, publishedFormTitle, formAnswers, completedExercises, completedMeals, water, formSubmitted, formSent, workoutSent, workoutFeedback, studentNotes, selectedStudentId, toast, lockedRole])
+    setCompletedExercises, toggleMeal, setWater, submitForm, sendWorkout, sendForm, submitWorkoutFeedback, addStudentNote, setSelectedStudentId, openExercisePainReport, clearAssistantEntry, notify, resetPrototype,
+  }), [role, page, workout, workoutName, workoutDraftStudentId, studentWorkout, studentWorkoutName, painReports, sessions, messages, formQuestions, publishedFormQuestions, formTitle, publishedFormTitle, formAnswers, completedExercises, completedMeals, water, formSubmitted, formSent, workoutSent, workoutFeedback, studentNotes, selectedStudentId, assistantEntry, toast, lockedRole])
 
   return <PrototypeContext.Provider value={value}>{children}</PrototypeContext.Provider>
 }

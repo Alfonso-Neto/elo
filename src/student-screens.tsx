@@ -45,7 +45,7 @@ export function StudentWorkoutScreen() {
 }
 
 function DemoStudentWorkoutScreen() {
-  const { navigate, studentWorkout: workout, studentWorkoutName: workoutName, completedExercises, setCompletedExercises, submitWorkoutFeedback, notify } = usePrototype()
+  const { navigate, openExercisePainReport, studentWorkout: workout, studentWorkoutName: workoutName, completedExercises, setCompletedExercises, submitWorkoutFeedback, notify } = usePrototype()
   const [selected, setSelected] = useState<Exercise | null>(null)
   const [playing, setPlaying] = useState(true)
   const [started, setStarted] = useState(false)
@@ -63,7 +63,7 @@ function DemoStudentWorkoutScreen() {
     <div className="workout-progress"><div><span><strong>{completedCount} de {workout.length}</strong> exercícios</span><b>{progress}%</b></div><Progress value={progress} label="Progresso do treino" /></div>
     <div className="student-exercise-list">{workout.map((exercise, index) => { const done = completedExercises.includes(exercise.id); return <article className={done ? 'done' : ''} key={exercise.id}><button className="complete-exercise" onClick={() => toggle(exercise.id)} aria-label={done ? `Desmarcar ${exercise.name}` : `Concluir ${exercise.name}`}>{done ? <Check size={18} /> : <Circle size={18} />}</button><span className="exercise-order">{String(index + 1).padStart(2,'0')}</span><button className="exercise-info" onClick={() => setSelected(exercise)}><span className="exercise-glyph"><Dumbbell size={18} /></span><span><strong>{exercise.name}</strong><small>{exercise.sets} séries × {exercise.reps} · {exercise.load} · {exercise.rest}</small></span>{exercise.suggested && <span className="tag success">AJUSTADO</span>}<ChevronRight size={17} /></button></article>})}</div>
     <Button className="finish-workout" onClick={finish}><CheckCircle2 size={17} /> Finalizar treino</Button>
-    {selected && <Drawer title={selected.name} eyebrow="EXECUÇÃO E PARÂMETROS" onClose={() => setSelected(null)}><MovementDemo name={selected.name} playing={playing} onToggle={() => setPlaying(!playing)} /><div className="exercise-stats">{[['Séries',selected.sets],['Reps',selected.reps],['Carga',selected.load],['Descanso',selected.rest],['Cadência',selected.tempo],['RIR',selected.rir]].map(([label,value]) => <div key={label}><strong>{value}</strong><small>{label}</small></div>)}</div><div className="trainer-note"><Eyebrow>RECADO DO ANDRÉ</Eyebrow><p>{selected.note}</p></div><Button variant="secondary" className="wide" onClick={() => { setSelected(null); navigate('assistant') }}><HeartPulse size={16} /> Senti dor neste exercício</Button><Button className="wide" onClick={() => { toggle(selected.id); setSelected(null) }}>{completedExercises.includes(selected.id) ? 'Marcar como não concluído' : 'Concluir exercício'}</Button></Drawer>}
+    {selected && <Drawer title={selected.name} eyebrow="EXECUÇÃO E PARÂMETROS" onClose={() => setSelected(null)}><MovementDemo name={selected.name} playing={playing} onToggle={() => setPlaying(!playing)} /><div className="exercise-stats">{[['Séries',selected.sets],['Reps',selected.reps],['Carga',selected.load],['Descanso',selected.rest],['Cadência',selected.tempo],['RIR',selected.rir]].map(([label,value]) => <div key={label}><strong>{value}</strong><small>{label}</small></div>)}</div><div className="trainer-note"><Eyebrow>RECADO DO ANDRÉ</Eyebrow><p>{selected.note}</p></div><Button variant="secondary" className="wide" onClick={() => { const movement = selected.name; setSelected(null); openExercisePainReport(movement) }}><HeartPulse size={16} /> Senti dor neste exercício</Button><Button className="wide" onClick={() => { toggle(selected.id); setSelected(null) }}>{completedExercises.includes(selected.id) ? 'Marcar como não concluído' : 'Concluir exercício'}</Button></Drawer>}
     {feedback && <Modal title="Como foi para você?" eyebrow="FEEDBACK PÓS-TREINO" onClose={() => setFeedback(false)} size="small"><div className="feedback-form"><label><span>Esforço percebido</span><strong>{rpe}/10</strong><input type="range" min="0" max="10" value={rpe} onChange={(event) => setRpe(Number(event.target.value))} /></label><div className="mood-options" role="group" aria-label="Sensação após o treino">{['Leve','Na medida','Pesado'].map((option) => <button className={mood === option ? 'active' : ''} onClick={() => setMood(option)} aria-pressed={mood === option} key={option}>{option}</button>)}</div><label><span>Quer contar algo ao André?</span><textarea value={comment} onChange={(event) => setComment(event.target.value.slice(0, 400))} placeholder="Opcional: dor, dificuldade ou conquista..." /></label><Button className="wide" onClick={() => { submitWorkoutFeedback(rpe, mood, comment); setFeedback(false); navigate('today') }}>Enviar feedback</Button></div></Modal>}
   </div>
 }
@@ -79,15 +79,17 @@ const redFlagOptions: { value: PainRedFlag | 'none'; label: string }[] = [
 ]
 
 export function StudentAssistantScreen() {
-  const { navigate, addPainReport, studentWorkout: demoWorkout, setSessions, notify } = usePrototype()
+  const { navigate, addPainReport, assistantEntry, clearAssistantEntry, studentWorkout: demoWorkout, setSessions, notify } = usePrototype()
   const { isDemo, membership, profile } = useAuth()
   const trainerFirstName = isDemo ? 'André' : membership?.trainerName.split(/\s+/)[0] ?? 'seu professor'
+  const entryMovement = assistantEntry?.kind === 'exercise-pain' ? assistantEntry.movement : ''
   const [liveWorkout, setLiveWorkout] = useState<Exercise[]>([])
   const workout = isDemo ? demoWorkout : liveWorkout
-  const [mode, setMode] = useState<'home' | 'pain' | 'help' | 'absence'>('home')
-  const [step, setStep] = useState<PainStep>('intro')
+  const [mode, setMode] = useState<'home' | 'pain' | 'help' | 'absence'>(entryMovement ? 'pain' : 'home')
+  const [step, setStep] = useState<PainStep>(entryMovement ? 'location' : 'intro')
   const [location, setLocation] = useState('')
-  const [movement, setMovement] = useState('')
+  const [movement, setMovement] = useState(entryMovement)
+  const [movementSource, setMovementSource] = useState<'workout' | null>(entryMovement ? 'workout' : null)
   const [moment, setMoment] = useState('')
   const [intensity, setIntensity] = useState(0)
   const [redFlags, setRedFlags] = useState<PainRedFlag[]>([])
@@ -106,6 +108,15 @@ export function StudentAssistantScreen() {
   const [helpExercise, setHelpExercise] = useState<Exercise | null>(null)
   const [helpPlaying, setHelpPlaying] = useState(true)
   const assessment = assessPainSafety(intensity, redFlags)
+  const movementOptions = useMemo(() => Array.from(new Set([...workout.map((exercise) => exercise.name), 'Caminhando ou correndo', 'Não estava treinando'])), [workout])
+  useEffect(() => {
+    if (!assistantEntry || assistantEntry.kind !== 'exercise-pain') return
+    setMode('pain')
+    setStep('location')
+    setMovement(assistantEntry.movement)
+    setMovementSource('workout')
+    clearAssistantEntry()
+  }, [assistantEntry, clearAssistantEntry])
   useEffect(() => {
     if (isDemo || !membership || !profile) return
     let active = true
@@ -168,7 +179,7 @@ export function StudentAssistantScreen() {
       setSubmitting(false)
     }
   }
-  const reset = () => { setMode('home'); setStep('intro'); setLocation(''); setMovement(''); setMoment(''); setIntensity(0); setRedFlags([]); setRedFlagsAnswered(false); setNoRedFlags(false); setDetail(''); setConsent(false); setConsentError(false); setSubmitting(false); setSubmitError(''); setPendingIntake(null); setSavedReportId(''); setAssistantPhase('idle'); setAssistantProposal(null); commandKeys.current = null }
+  const reset = () => { setMode('home'); setStep('intro'); setLocation(''); setMovement(''); setMovementSource(null); setMoment(''); setIntensity(0); setRedFlags([]); setRedFlagsAnswered(false); setNoRedFlags(false); setDetail(''); setConsent(false); setConsentError(false); setSubmitting(false); setSubmitError(''); setPendingIntake(null); setSavedReportId(''); setAssistantPhase('idle'); setAssistantProposal(null); commandKeys.current = null }
   const editAfterFailure = () => { setSubmitError(''); setPendingIntake(null); commandKeys.current = null; setStep('detail') }
   const toggleRedFlag = (value: PainRedFlag | 'none') => {
     if (value === 'none') { setRedFlags([]); setNoRedFlags(true); setRedFlagsAnswered(true); return }
@@ -180,7 +191,7 @@ export function StudentAssistantScreen() {
   const backPain = () => {
     if (step === 'location') reset()
     else if (step === 'movement') setStep('location')
-    else if (step === 'moment') setStep('movement')
+    else if (step === 'moment') setStep(movementSource === 'workout' ? 'location' : 'movement')
     else if (step === 'intensity') setStep('moment')
     else if (step === 'red-flags') setStep('intensity')
     else if (step === 'detail') setStep('red-flags')
@@ -188,9 +199,9 @@ export function StudentAssistantScreen() {
   }
   return <div className="page assistant-page enter"><PageIntro eyebrow="ASSISTENTE · CANAL ESTRUTURADO" title={<>O que seu corpo<br />está tentando dizer?</>} copy={`Eu organizo o relato e aviso ${trainerFirstName}. Não faço diagnóstico e não altero seu treino sozinho.`} />
     {mode === 'home' && <div className="assistant-choices"><button onClick={() => { setMode('pain'); setStep('location') }}><span className="assistant-choice-icon danger"><HeartPulse /></span><span><Eyebrow>RELATO ESTRUTURADO</Eyebrow><h3>Senti uma dor</h3><p>Local, momento e intensidade em menos de um minuto.</p></span><ArrowRight size={18} /></button><button onClick={() => setMode('help')}><span className="assistant-choice-icon blue"><Dumbbell /></span><span><Eyebrow>EXECUÇÃO</Eyebrow><h3>Dúvida em um exercício</h3><p>Reveja a demonstração e o recado de {trainerFirstName}.</p></span><ArrowRight size={18} /></button><button onClick={() => setMode('absence')}><span className="assistant-choice-icon neutral"><Moon /></span><span><Eyebrow>ROTINA</Eyebrow><h3>Não consigo treinar hoje</h3><p>Avise {trainerFirstName} e preserve o contexto da semana.</p></span><ArrowRight size={18} /></button></div>}
-    {mode === 'pain' && <section className="assistant-flow">{step !== 'done' && !submitting && !submitError && <BackButton onClick={backPain} label="Voltar uma etapa" />}<div className="assistant-thread"><div className="assistant-message"><Sparkles size={17} /><p>{step === 'done' ? `Seu relato foi estruturado e já apareceu para ${trainerFirstName}.` : 'Vou organizar o que aconteceu e checar sinais de alerta. Eu não faço diagnóstico e não altero seu treino.'}</p></div>{location && <div className="assistant-answer">{location}</div>}{movement && <div className="assistant-answer">{movement}</div>}{moment && <div className="assistant-answer">{moment}</div>}{['red-flags','detail','review'].includes(step) && <div className="assistant-answer">Intensidade {intensity}/10</div>}</div>
-      {step === 'location' && <FlowQuestion title="Onde você sentiu?" copy="Escolha a região mais próxima.">{['Joelho direito','Joelho esquerdo','Lombar','Ombro direito','Ombro esquerdo','Quadril','Outra região'].map((item) => <button key={item} onClick={() => { setLocation(item); setStep('movement') }}>{item}</button>)}</FlowQuestion>}
-      {step === 'movement' && <FlowQuestion title="Em qual movimento?" copy="Escolha o exercício ou a situação mais próxima.">{[...workout.map((exercise) => exercise.name), 'Caminhando ou correndo', 'Não estava treinando'].map((item) => <button key={item} onClick={() => { setMovement(item); setStep('moment') }}>{item}</button>)}</FlowQuestion>}
+    {mode === 'pain' && <section className="assistant-flow">{step !== 'done' && !submitting && !submitError && <BackButton onClick={backPain} label="Voltar uma etapa" />}{movementSource === 'workout' && step !== 'done' && <div className="assistant-entry-context" role="status"><span><Dumbbell size={17} /></span><div><Eyebrow>CONTEXTO DO TREINO</Eyebrow><strong>{movement}</strong><small>O exercício foi trazido do treino aberto. Você ainda confirma todo o relato.</small></div><button type="button" onClick={() => { setMovement(''); setMovementSource(null); setStep(location ? 'movement' : 'location') }}>Trocar movimento</button></div>}<div className="assistant-thread"><div className="assistant-message"><Sparkles size={17} /><p>{step === 'done' ? `Seu relato foi estruturado e já apareceu para ${trainerFirstName}.` : 'Vou organizar o que aconteceu e checar sinais de alerta. Eu não faço diagnóstico e não altero seu treino.'}</p></div>{location && <div className="assistant-answer">{location}</div>}{location && movement && <div className="assistant-answer">{movement}</div>}{moment && <div className="assistant-answer">{moment}</div>}{['red-flags','detail','review'].includes(step) && <div className="assistant-answer">Intensidade {intensity}/10</div>}</div>
+      {step === 'location' && <FlowQuestion title="Onde você sentiu?" copy="Escolha a região mais próxima.">{['Joelho direito','Joelho esquerdo','Lombar','Ombro direito','Ombro esquerdo','Quadril','Outra região'].map((item) => <button key={item} onClick={() => { setLocation(item); setStep(movementSource === 'workout' && movement ? 'moment' : 'movement') }}>{item}</button>)}</FlowQuestion>}
+      {step === 'movement' && <FlowQuestion title="Em qual movimento?" copy="Escolha o exercício ou a situação mais próxima.">{movementOptions.map((item) => <button key={item} onClick={() => { setMovement(item); setStep('moment') }}>{item}</button>)}</FlowQuestion>}
       {step === 'moment' && <FlowQuestion title="Quando incomodou?" copy={`Isso ajuda ${trainerFirstName} a entender o padrão.`}>{['Durante a descida','Durante a subida','Depois da série','Após o treino','Em repouso'].map((item) => <button key={item} onClick={() => { setMoment(item); setStep('intensity') }}>{item}</button>)}</FlowQuestion>}
       {step === 'intensity' && <div className="flow-question"><Eyebrow>INTENSIDADE</Eyebrow><h3>Qual foi a intensidade?</h3><p>0 é sem dor; 10 é a pior dor imaginável.</p><div className="pain-scale">{Array.from({ length: 11 }, (_, value) => <button className={intensity === value ? 'active' : ''} key={value} onClick={() => { setIntensity(value); setStep('red-flags') }}>{value}</button>)}</div></div>}
       {step === 'red-flags' && <div className="flow-question"><Eyebrow>CHECAGEM DE SEGURANÇA</Eyebrow><h3>Algum destes sinais aconteceu?</h3><p>Marque tudo o que se aplica. Isso não é um diagnóstico; serve para orientar o próximo passo com mais segurança.</p><div className="pain-red-flags">{redFlagOptions.map((option) => { const active = option.value === 'none' ? noRedFlags : redFlags.includes(option.value); return <button type="button" className={active ? 'active' : ''} aria-pressed={active} key={option.value} onClick={() => toggleRedFlag(option.value)}><i>{active && <Check size={13} />}</i>{option.label}</button> })}</div><Button className="wide pain-step-action" disabled={!redFlagsAnswered} onClick={() => setStep('detail')}>Continuar <ArrowRight size={16} /></Button></div>}
@@ -200,7 +211,7 @@ export function StudentAssistantScreen() {
     </section>}
     {mode === 'help' && <section className="assistant-flow"><BackButton onClick={reset} /><SectionTitle title="Qual exercício gerou dúvida?" copy="A demonstração é um apoio; siga sempre a orientação do seu professor." /><div className="help-list">{workout.map((exercise) => <button key={exercise.id} onClick={() => setHelpExercise(exercise)}><Dumbbell size={17} /><span><strong>{exercise.name}</strong><small>{exercise.sets} × {exercise.reps} · ver execução</small></span><ArrowRight size={16} /></button>)}{!workout.length && <p className="mini-empty">Nenhum treino publicado para revisar ainda.</p>}</div></section>}
     {mode === 'absence' && (isDemo ? <section className="assistant-flow"><BackButton onClick={reset} /><div className="absence-card"><Moon size={29} /><Eyebrow>SEM CULPA · COM CONTEXTO</Eyebrow><h3>Quer avisar que hoje não dá?</h3><p>Eu sinalizo sua próxima sessão ao André. Ele poderá reorganizar a semana sem tratar isso como um novo pedido de horário.</p><div><Button onClick={() => { setSessions((items) => { const next = items.find((item) => item.student === 'Marina Costa' && item.status === 'confirmed'); return next ? items.map((item) => item.id === next.id ? { ...item, status: 'reschedule' } : item) : items }); notify('André foi avisado', 'Sua próxima sessão foi marcada para reorganização.'); navigate('today') }}>Avisar e reorganizar</Button><Button variant="ghost" onClick={reset}>Voltar</Button></div></div></section> : <LiveStudentAbsenceFlow onBack={reset} onDone={() => navigate('schedule')} />)}
-    {helpExercise && <Drawer title={helpExercise.name} eyebrow={`EXECUÇÃO E RECADO DE ${trainerFirstName.toUpperCase()}`} onClose={() => setHelpExercise(null)}><MovementDemo name={helpExercise.name} playing={helpPlaying} onToggle={() => setHelpPlaying((value) => !value)} /><div className="exercise-stats">{[['Séries',helpExercise.sets],['Reps',helpExercise.reps],['Carga',helpExercise.load],['Descanso',helpExercise.rest],['Cadência',helpExercise.tempo],['RIR',helpExercise.rir]].map(([label,value]) => <div key={label}><strong>{value}</strong><small>{label}</small></div>)}</div><div className="trainer-note"><Eyebrow>RECADO DO SEU PROFESSOR</Eyebrow><p>{helpExercise.note}</p></div><Button variant="secondary" className="wide" onClick={() => { setHelpExercise(null); setMode('pain'); setStep('location') }}><HeartPulse size={16} /> Relatar dor neste movimento</Button></Drawer>}
+    {helpExercise && <Drawer title={helpExercise.name} eyebrow={`EXECUÇÃO E RECADO DE ${trainerFirstName.toUpperCase()}`} onClose={() => setHelpExercise(null)}><MovementDemo name={helpExercise.name} playing={helpPlaying} onToggle={() => setHelpPlaying((value) => !value)} /><div className="exercise-stats">{[['Séries',helpExercise.sets],['Reps',helpExercise.reps],['Carga',helpExercise.load],['Descanso',helpExercise.rest],['Cadência',helpExercise.tempo],['RIR',helpExercise.rir]].map(([label,value]) => <div key={label}><strong>{value}</strong><small>{label}</small></div>)}</div><div className="trainer-note"><Eyebrow>RECADO DO SEU PROFESSOR</Eyebrow><p>{helpExercise.note}</p></div><Button variant="secondary" className="wide" onClick={() => { setMovement(helpExercise.name); setMovementSource('workout'); setHelpExercise(null); setMode('pain'); setStep('location') }}><HeartPulse size={16} /> Relatar dor neste movimento</Button></Drawer>}
   </div>
 }
 
