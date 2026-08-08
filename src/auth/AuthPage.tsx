@@ -11,6 +11,13 @@ import { isValidEmail, validatePasswordReset, validateRegistration, type Registr
 type AuthRoute = 'entrar' | 'cadastro' | 'confirmar-email' | 'recuperar-senha' | 'redefinir-senha'
 
 const authRoutes: AuthRoute[] = ['entrar', 'cadastro', 'confirmar-email', 'recuperar-senha', 'redefinir-senha']
+const authTitles: Record<AuthRoute, string> = {
+  entrar: 'Entrar',
+  cadastro: 'Criar conta',
+  'confirmar-email': 'Confirmar e-mail',
+  'recuperar-senha': 'Recuperar acesso',
+  'redefinir-senha': 'Redefinir senha',
+}
 const states = ['AC', 'AL', 'AP', 'AM', 'BA', 'CE', 'DF', 'ES', 'GO', 'MA', 'MG', 'MS', 'MT', 'PA', 'PB', 'PE', 'PI', 'PR', 'RJ', 'RN', 'RO', 'RR', 'RS', 'SC', 'SE', 'SP', 'TO']
 
 function readRoute(): AuthRoute {
@@ -316,6 +323,7 @@ export function AuthPage() {
     window.addEventListener('popstate', sync)
     return () => { document.body.classList.remove('auth-active'); window.removeEventListener('hashchange', sync); window.removeEventListener('popstate', sync) }
   }, [])
+  useEffect(() => { document.title = `${authTitles[route]} · Elo` }, [route])
   const content = useMemo(() => {
     if (route === 'cadastro') return <SignUp navigate={navigate} onEmail={setConfirmationEmail} />
     if (route === 'confirmar-email') return <ConfirmEmail email={confirmationEmail} navigate={navigate} />

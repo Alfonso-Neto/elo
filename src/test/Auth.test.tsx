@@ -16,6 +16,7 @@ describe('Elo authentication entry', () => {
     expect(screen.getByRole('button', { name: /Explorar demonstração/i })).toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: /Bom dia, André/i })).not.toBeInTheDocument()
     expect(document.getElementById('main-content')).toBeInTheDocument()
+    expect(document.title).toBe('Entrar · Elo')
   })
 
   it('describes validation errors and focuses the first invalid field', async () => {

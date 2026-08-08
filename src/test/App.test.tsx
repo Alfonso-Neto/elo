@@ -15,6 +15,8 @@ describe('Elo validation prototype', () => {
     ).toBeInTheDocument()
     expect(screen.queryByText(/Financeiro/i)).not.toBeInTheDocument()
     expect(screen.getAllByText(/Copiloto/i).length).toBeGreaterThan(0)
+    expect(screen.getByText('Área atual: Visão geral')).toBeInTheDocument()
+    expect(document.title).toBe('Visão geral · Elo')
   })
 
   it('closes the pain-report loop across roles', async () => {

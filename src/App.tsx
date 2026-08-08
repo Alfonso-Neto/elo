@@ -140,6 +140,8 @@ function RouteLoading() {
 
 function AppContent() {
   const { role, page } = usePrototype()
+  const pageTitle = titleForPage[page]
+  useEffect(() => { document.title = `${pageTitle} · Elo` }, [pageTitle])
   const screen = useMemo(() => {
     const screens: Partial<Record<Page, React.ReactNode>> = {
       dashboard: <TrainerDashboard />, students: <StudentsScreen />, 'student-detail': <StudentDetailScreen />, copilot: <CopilotScreen />,
@@ -149,7 +151,7 @@ function AppContent() {
     }
     return screens[page] ?? (role === 'trainer' ? <TrainerDashboard /> : <StudentTodayScreen />)
   }, [page, role])
-  return <div className={`app-shell role-${role}`}><Sidebar /><div className="main-shell"><Topbar /><main id="main-content" tabIndex={-1}><Suspense fallback={<RouteLoading />}>{screen}</Suspense></main></div><BottomNav /><Toast /></div>
+  return <div className={`app-shell role-${role}`}><Sidebar /><div className="main-shell"><Topbar /><main id="main-content" tabIndex={-1}><span className="sr-only" role="status">Área atual: {pageTitle}</span><Suspense fallback={<RouteLoading />}>{screen}</Suspense></main></div><BottomNav /><Toast /></div>
 }
 
 function AppGate() {
