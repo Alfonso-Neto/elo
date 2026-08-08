@@ -102,6 +102,7 @@ export function StudentAssistantScreen() {
   const [submitError, setSubmitError] = useState('')
   const [pendingIntake, setPendingIntake] = useState<PendingPainIntake | null>(null)
   const commandKeys = useRef<{ consent: string; report: string; assistant: string } | null>(null)
+  const assistantRequestVersion = useRef(0)
   const [savedReportId, setSavedReportId] = useState('')
   const [assistantPhase, setAssistantPhase] = useState<'idle' | 'loading' | 'processing' | 'complete' | 'unavailable'>('idle')
   const [assistantProposal, setAssistantProposal] = useState<AssistantProposal | null>(null)
@@ -109,6 +110,7 @@ export function StudentAssistantScreen() {
   const [helpPlaying, setHelpPlaying] = useState(true)
   const assessment = assessPainSafety(intensity, redFlags)
   const movementOptions = useMemo(() => Array.from(new Set([...workout.map((exercise) => exercise.name), 'Caminhando ou correndo', 'Não estava treinando'])), [workout])
+  useEffect(() => () => { assistantRequestVersion.current += 1 }, [])
   useEffect(() => {
     if (!assistantEntry || assistantEntry.kind !== 'exercise-pain') return
     setMode('pain')
@@ -126,15 +128,18 @@ export function StudentAssistantScreen() {
     return () => { active = false }
   }, [isDemo, membership, profile])
   const loadPainProposal = async (painReportId: string) => {
-    if (isDemo || !membership || !profile || !commandKeys.current) return
+    const assistantKey = commandKeys.current?.assistant
+    if (isDemo || !membership || !profile || !assistantKey) return
+    const requestVersion = ++assistantRequestVersion.current
     setAssistantPhase('loading')
     try {
       const result = await createAssistantService().requestPainTriage({
         workspaceId: membership.workspaceId,
         studentId: profile.id,
         painReportId,
-        idempotencyKey: commandKeys.current.assistant,
+        idempotencyKey: assistantKey,
       })
+      if (requestVersion !== assistantRequestVersion.current) return
       if (result.state === 'processing') {
         setAssistantPhase('processing')
         return
@@ -142,6 +147,7 @@ export function StudentAssistantScreen() {
       setAssistantProposal(result.proposal)
       setAssistantPhase('complete')
     } catch {
+      if (requestVersion !== assistantRequestVersion.current) return
       setAssistantPhase('unavailable')
     }
   }
@@ -179,7 +185,7 @@ export function StudentAssistantScreen() {
       setSubmitting(false)
     }
   }
-  const reset = () => { setMode('home'); setStep('intro'); setLocation(''); setMovement(''); setMovementSource(null); setMoment(''); setIntensity(0); setRedFlags([]); setRedFlagsAnswered(false); setNoRedFlags(false); setDetail(''); setConsent(false); setConsentError(false); setSubmitting(false); setSubmitError(''); setPendingIntake(null); setSavedReportId(''); setAssistantPhase('idle'); setAssistantProposal(null); commandKeys.current = null }
+  const reset = () => { assistantRequestVersion.current += 1; setMode('home'); setStep('intro'); setLocation(''); setMovement(''); setMovementSource(null); setMoment(''); setIntensity(0); setRedFlags([]); setRedFlagsAnswered(false); setNoRedFlags(false); setDetail(''); setConsent(false); setConsentError(false); setSubmitting(false); setSubmitError(''); setPendingIntake(null); setSavedReportId(''); setAssistantPhase('idle'); setAssistantProposal(null); commandKeys.current = null }
   const editAfterFailure = () => { setSubmitError(''); setPendingIntake(null); commandKeys.current = null; setStep('detail') }
   const toggleRedFlag = (value: PainRedFlag | 'none') => {
     if (value === 'none') { setRedFlags([]); setNoRedFlags(true); setRedFlagsAnswered(true); return }
