@@ -39,6 +39,14 @@ function dateTime(value: string) {
   return Number.isNaN(date.getTime()) ? 'registro recente' : new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(date)
 }
 
+const exerciseDraftFields: (keyof Exercise)[] = ['id', 'name', 'muscle', 'sets', 'reps', 'load', 'rest', 'tempo', 'rir', 'note', 'suggested']
+
+function matchesWorkoutSnapshot(candidate: { title: string; exercises: Exercise[] }, title: string, exercises: Exercise[]) {
+  return candidate.title === title
+    && candidate.exercises.length === exercises.length
+    && candidate.exercises.every((exercise, index) => exerciseDraftFields.every((field) => exercise[field] === exercises[index]?.[field]))
+}
+
 function useTrainerTarget() {
   const { membership, profile } = useAuth()
   const { selectedStudentId, setSelectedStudentId } = usePrototype()
@@ -72,9 +80,9 @@ function TargetState({ phase, error, onRetry }: { phase: LoadPhase; error: strin
   return <div className="empty-state"><FileCheck2 size={29} /><h3>Nenhum aluno vinculado.</h3><p>Convide um aluno antes de prescrever ou enviar uma anamnese.</p></div>
 }
 
-function TargetPicker({ students, value, onChange, label }: { students: EnrolledStudent[]; value: string; onChange: (value: string) => void; label: string }) {
+function TargetPicker({ students, value, onChange, label, disabled = false }: { students: EnrolledStudent[]; value: string; onChange: (value: string) => void; label: string; disabled?: boolean }) {
   const student = students.find((item) => item.userId === value)
-  return <label className="training-target-picker"><span className="person-avatar priority">{initials(student?.displayName ?? 'Aluno')}</span><span><small>{label}</small><select value={value} onChange={(event) => onChange(event.target.value)}>{students.map((item) => <option value={item.userId} key={item.userId}>{item.displayName}</option>)}</select></span></label>
+  return <label className="training-target-picker"><span className="person-avatar priority">{initials(student?.displayName ?? 'Aluno')}</span><span><small>{label}</small><select value={value} disabled={disabled} onChange={(event) => onChange(event.target.value)}>{students.map((item) => <option value={item.userId} key={item.userId}>{item.displayName}</option>)}</select></span></label>
 }
 
 const builderOperationLabels: Record<AssistantProposal['workout_changes'][number]['operation'], string> = {
@@ -172,12 +180,14 @@ export function LiveWorkoutBuilderScreen() {
   const [decidingReview, setDecidingReview] = useState(false)
   const [reloadToken, setReloadToken] = useState(0)
   const publishKey = useRef('')
+  const publishRequestVersion = useRef(0)
   const reviewKey = useRef('')
   const reviewSnapshot = useRef<{ report: string; context: TrainerCopilotContext } | null>(null)
   const reviewRequestVersion = useRef(0)
   const sessionDraftsRef = useRef(workoutSessionDrafts)
 
   useEffect(() => { sessionDraftsRef.current = workoutSessionDrafts }, [workoutSessionDrafts])
+  useEffect(() => () => { publishRequestVersion.current += 1 }, [])
 
   const resetReview = useCallback(() => {
     reviewRequestVersion.current += 1
@@ -198,7 +208,9 @@ export function LiveWorkoutBuilderScreen() {
     setPhase('loading')
     setError('')
     setPublished(false)
+    setPublishing(false)
     publishKey.current = ''
+    publishRequestVersion.current += 1
     resetReview()
     if (workoutDraftStudentId === target.selectedStudentId && stagedWorkout.length) {
       const stagedDraft = stagedWorkout.map((item) => ({ ...item }))
@@ -243,10 +255,12 @@ export function LiveWorkoutBuilderScreen() {
     }))
   }
   const updateExercise = (id: string, key: keyof Exercise, value: string) => {
+    if (publishing) return
     const next = draft.map((item) => item.id === id ? { ...item, [key]: value } : item)
     changed(); setDraft(next); rememberDraft(title, next)
   }
   const move = (index: number, direction: number) => {
+    if (publishing) return
     const destination = index + direction
     if (destination < 0 || destination >= draft.length) return
     const next = [...draft]
@@ -256,11 +270,13 @@ export function LiveWorkoutBuilderScreen() {
     changed(); setDraft(next); rememberDraft(title, next)
   }
   const addExercise = (exercise: Exercise) => {
+    if (publishing) return
     if (draft.some((item) => item.id === exercise.id)) { notify('Exercício já incluído', 'Edite os parâmetros diretamente na prescrição.'); return }
     const next = [...draft, { ...exercise }]
     changed(); setDraft(next); rememberDraft(title, next); setExpanded(exercise.id); setLibraryOpen(false)
   }
   const removeExercise = (exerciseId: string) => {
+    if (publishing) return
     const next = draft.filter((item) => item.id !== exerciseId)
     changed(); setDraft(next); rememberDraft(title, next)
   }
@@ -268,24 +284,37 @@ export function LiveWorkoutBuilderScreen() {
   const publish = async () => {
     if (!target.scope || !target.student || !canPublish || publishing) return
     const student = target.student
+    const publishedTitle = title
+    const publishedExercises = draft.map((exercise) => ({ ...exercise }))
+    const requestVersion = ++publishRequestVersion.current
     const key = publishKey.current || createIdempotencyKey('publish-workout')
     publishKey.current = key
     setPublishing(true)
     setError('')
     try {
-      await publishWorkoutVersion(target.scope, { studentUserId: student.userId, title, exercises: draft, idempotencyKey: key })
+      await publishWorkoutVersion(target.scope, { studentUserId: student.userId, title: publishedTitle, exercises: publishedExercises, idempotencyKey: key })
       setWorkoutSessionDrafts((current) => {
-        if (!current[student.userId]) return current
+        const currentDraft = current[student.userId]
+        if (!currentDraft || !matchesWorkoutSnapshot(currentDraft, publishedTitle, publishedExercises)) return current
         const next = { ...current }
         delete next[student.userId]
         return next
       })
+      if (requestVersion !== publishRequestVersion.current) {
+        notify('Treino publicado', `${student.displayName} recebeu a versão confirmada. Qualquer rascunho mais novo foi preservado.`)
+        return
+      }
       setPublished(true)
       notify('Treino publicado', `${student.displayName} recebeu uma nova versão imutável.`)
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Não foi possível publicar o treino agora.')
+      const message = cause instanceof Error ? cause.message : 'Não foi possível publicar o treino agora.'
+      if (requestVersion !== publishRequestVersion.current) {
+        notify('Publicação não concluída', `${student.displayName}: ${message}`)
+        return
+      }
+      setError(message)
     } finally {
-      setPublishing(false)
+      if (requestVersion === publishRequestVersion.current) setPublishing(false)
     }
   }
 
@@ -404,18 +433,18 @@ export function LiveWorkoutBuilderScreen() {
 
   return <div className="page builder-page live-training-screen enter"><BackButton onClick={() => navigate('copilot')} label="Voltar ao Copiloto" />
     <PageIntro eyebrow={`CONSTRUTOR · ${target.student.displayName.toUpperCase()}`} title="Treino em suas mãos." copy="A publicação cria uma versão imutável. Qualquer atualização futura vira uma nova versão auditável." action={<div className="builder-actions"><Button variant="secondary" disabled={!draft.length} onClick={() => setPreview(draft[0])}><Eye size={16} /> Pré-visualizar</Button><Button disabled={!canPublish || publishing} onClick={() => void publish()}>{publishing ? <LoaderCircle className="spin" size={16} /> : <Send size={16} />} {published ? 'Publicar nova versão' : 'Publicar treino'}</Button></div>} />
-    <div className="live-target-row"><TargetPicker students={target.students} value={target.selectedStudentId} onChange={target.setSelectedStudentId} label="PRESCREVENDO PARA" /><span><strong>{draft.length}</strong><small>EXERCÍCIOS NO RASCUNHO</small></span></div>
-    <section className="builder-toolbar"><label><span>NOME DO TREINO</span><input value={title} onChange={(event) => { const nextTitle = event.target.value.slice(0, 80); changed(); setTitle(nextTitle); rememberDraft(nextTitle, draft) }} /></label><div><span className="tag blue">{hasSessionDraft ? 'RASCUNHO PRESERVADO' : 'BASE PUBLICADA'}</span><small>{hasSessionDraft ? 'Continua disponível enquanto esta conta estiver aberta.' : 'Edite para criar um rascunho; nada publica sozinho.'}</small></div></section>
+    <div className="live-target-row"><TargetPicker students={target.students} value={target.selectedStudentId} onChange={target.setSelectedStudentId} label="PRESCREVENDO PARA" disabled={publishing} /><span><strong>{draft.length}</strong><small>EXERCÍCIOS NO RASCUNHO</small></span></div>
+    <section className="builder-toolbar"><label><span>NOME DO TREINO</span><input value={title} disabled={publishing} onChange={(event) => { const nextTitle = event.target.value.slice(0, 80); changed(); setTitle(nextTitle); rememberDraft(nextTitle, draft) }} /></label><div><span className="tag blue">{hasSessionDraft ? 'RASCUNHO PRESERVADO' : 'BASE PUBLICADA'}</span><small>{publishing ? 'Publicando o snapshot confirmado; aguarde para editar.' : hasSessionDraft ? 'Continua disponível enquanto esta conta estiver aberta.' : 'Edite para criar um rascunho; nada publica sozinho.'}</small></div></section>
     <div className="exercise-builder-list">{draft.map((exercise, index) => <article className={expanded === exercise.id ? 'builder-exercise open' : 'builder-exercise'} key={exercise.id}><button className="builder-exercise-head" onClick={() => setExpanded(expanded === exercise.id ? '' : exercise.id)} aria-expanded={expanded === exercise.id}><GripVertical size={17} /><span className="exercise-order">{String(index + 1).padStart(2, '0')}</span><span className="exercise-glyph"><Dumbbell size={18} /></span><span><strong>{exercise.name}</strong><small>{exercise.muscle}</small></span>{exercise.suggested && <span className="tag success">PROPOSTA REVISADA</span>}<ChevronDown size={18} /></button>
-      {expanded === exercise.id && <div className="builder-fields enter"><div className="field-grid">{([['sets','Séries'],['reps','Repetições'],['load','Carga'],['rest','Descanso'],['tempo','Cadência'],['rir','RIR']] as [keyof Exercise,string][]).map(([key,label]) => <label key={key}><span>{label}</span><input value={String(exercise[key] ?? '')} onChange={(event) => updateExercise(exercise.id, key, event.target.value.slice(0, 40))} /></label>)}</div><label className="note-field"><span>Observação visível para o aluno</span><textarea value={exercise.note} onChange={(event) => updateExercise(exercise.id, 'note', event.target.value.slice(0, 220))} /></label><div className="exercise-actions"><Button variant="ghost" onClick={() => setPreview(exercise)}><Eye size={15} /> Ver como o aluno vê</Button><span /><button onClick={() => move(index,-1)} disabled={index === 0} aria-label="Mover para cima"><ArrowUp size={16} /></button><button onClick={() => move(index,1)} disabled={index === draft.length - 1} aria-label="Mover para baixo"><ArrowDown size={16} /></button><button className="danger-action" onClick={() => removeExercise(exercise.id)} aria-label={`Remover ${exercise.name}`}><Trash2 size={16} /></button></div></div>}
+      {expanded === exercise.id && <div className="builder-fields enter"><div className="field-grid">{([['sets','Séries'],['reps','Repetições'],['load','Carga'],['rest','Descanso'],['tempo','Cadência'],['rir','RIR']] as [keyof Exercise,string][]).map(([key,label]) => <label key={key}><span>{label}</span><input value={String(exercise[key] ?? '')} disabled={publishing} onChange={(event) => updateExercise(exercise.id, key, event.target.value.slice(0, 40))} /></label>)}</div><label className="note-field"><span>Observação visível para o aluno</span><textarea value={exercise.note} disabled={publishing} onChange={(event) => updateExercise(exercise.id, 'note', event.target.value.slice(0, 220))} /></label><div className="exercise-actions"><Button variant="ghost" onClick={() => setPreview(exercise)}><Eye size={15} /> Ver como o aluno vê</Button><span /><button onClick={() => move(index,-1)} disabled={publishing || index === 0} aria-label="Mover para cima"><ArrowUp size={16} /></button><button onClick={() => move(index,1)} disabled={publishing || index === draft.length - 1} aria-label="Mover para baixo"><ArrowDown size={16} /></button><button className="danger-action" disabled={publishing} onClick={() => removeExercise(exercise.id)} aria-label={`Remover ${exercise.name}`}><Trash2 size={16} /></button></div></div>}
     </article>)}</div>
     {!draft.length && <div className="empty-state compact"><Dumbbell size={27} /><h3>Comece a prescrição.</h3><p>Adicione exercícios da biblioteca e defina os parâmetros antes de publicar.</p></div>}
-    <button className="add-block" onClick={() => setLibraryOpen(true)}><Plus size={19} /><span><strong>Adicionar exercício</strong><small>Biblioteca de movimentos e parâmetros editáveis</small></span></button>
+    <button className="add-block" disabled={publishing} onClick={() => setLibraryOpen(true)}><Plus size={19} /><span><strong>Adicionar exercício</strong><small>Biblioteca de movimentos e parâmetros editáveis</small></span></button>
     {!canPublish && <p className="builder-validation" role="status"><AlertCircle size={15} /> Informe o nome e mantenha ao menos um exercício com séries e repetições.</p>}
     {error && <p className="builder-validation" role="alert"><AlertCircle size={15} /> {error}</p>}
     {published && <div className="live-publish-success"><Check size={18} /><span><strong>Versão publicada com sucesso.</strong><small>Edite qualquer campo para criar uma nova intenção e uma nova chave segura.</small></span></div>}
     <aside className="builder-savebar"><span><ShieldCheck size={16} /><strong>{hasSessionDraft ? 'Rascunho preservado nesta sessão' : 'Base carregada para revisão'}</strong><small>{canPublish ? hasSessionDraft ? 'Você pode navegar sem perder estas edições.' : 'Pronto para sua confirmação explícita.' : 'Complete os campos essenciais.'}</small></span><Button disabled={!canPublish || publishing} onClick={() => void publish()}>{publishing ? <LoaderCircle className="spin" size={16} /> : <Send size={16} />} Publicar para {target.student.displayName.split(/\s+/)[0]}</Button></aside>
-    <button className={`floating-copilot live-floating-copilot phase-${reviewPhase}`} onClick={() => setCopilotOpen(true)} aria-label={reviewButtonLabel} aria-haspopup="dialog" aria-expanded={copilotOpen}><Sparkles size={22} />{reviewCount > 0 && <b>{reviewCount}</b>}</button>
+    <button className={`floating-copilot live-floating-copilot phase-${reviewPhase}`} disabled={publishing} onClick={() => setCopilotOpen(true)} aria-label={publishing ? 'Copiloto indisponível durante a publicação' : reviewButtonLabel} aria-haspopup="dialog" aria-expanded={copilotOpen}><Sparkles size={22} />{reviewCount > 0 && <b>{reviewCount}</b>}</button>
     {copilotOpen && <Drawer title={reviewDecision ? 'Revisão concluída' : reviewProposal ? `${reviewCount} ${reviewCount === 1 ? 'ponto para pensar' : 'pontos para pensar'}` : 'Segundo olhar no rascunho'} eyebrow="COPILOTO FLUTUANTE · DECISÃO HUMANA" onClose={() => !decidingReview && setCopilotOpen(false)}><BuilderCopilotPanel phase={reviewPhase} proposal={reviewProposal} decision={reviewDecision} error={reviewError} coverage={reviewCoverage} deciding={decidingReview} draftCount={draft.length} onRun={() => void runBuilderReview()} onDecide={(decision) => void decideBuilderReview(decision)} /></Drawer>}
     {libraryOpen && <Drawer title="Biblioteca de exercícios" eyebrow="ADICIONAR AO RASCUNHO" onClose={() => setLibraryOpen(false)}><label className="search-field modal-search"><Search size={17} /><span className="sr-only">Buscar exercício</span><input autoFocus placeholder="Nome ou grupo muscular..." value={libraryQuery} onChange={(event) => setLibraryQuery(event.target.value)} /></label><div className="library-list">{exerciseLibrary.filter((exercise) => `${exercise.name} ${exercise.muscle}`.toLowerCase().includes(libraryQuery.toLowerCase())).map((exercise) => <button key={exercise.id} onClick={() => addExercise(exercise)}><span className="exercise-glyph"><Dumbbell size={17} /></span><span><strong>{exercise.name}</strong><small>{exercise.muscle}</small></span><Plus size={17} /></button>)}</div></Drawer>}
     {preview && <Drawer title={preview.name} eyebrow="VISÃO DO ALUNO" onClose={() => setPreview(null)}><MovementDemo name={preview.name} playing={playing} onToggle={() => setPlaying((value) => !value)} /><div className="exercise-stats">{[['Séries',preview.sets],['Reps',preview.reps],['Carga',preview.load],['Descanso',preview.rest],['Cadência',preview.tempo],['RIR',preview.rir]].map(([label,value]) => <div key={label}><strong>{value}</strong><small>{label}</small></div>)}</div><div className="trainer-note"><Eyebrow>RECADO DO PROFESSOR</Eyebrow><p>{preview.note || 'Sem observação adicional.'}</p></div></Drawer>}

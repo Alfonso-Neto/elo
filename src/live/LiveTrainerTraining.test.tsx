@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { AssistantProposal } from '../assistant/assistant-service'
 import { PrototypeProvider, usePrototype } from '../prototype-context'
 import { LiveWorkoutBuilderScreen } from './LiveTrainerTraining'
@@ -204,6 +204,53 @@ describe('live workout builder copilot', () => {
     fireEvent.change(screen.getByRole('combobox'), { target: { value: secondStudentId } })
     expect(await screen.findByDisplayValue('24 kg')).toBeInTheDocument()
     expect(mocks.getLatestWorkoutVersion).toHaveBeenCalledTimes(2)
+  })
+
+  it('freezes mutation controls and preserves edits newer than an in-flight publication', async () => {
+    let resolvePublish!: (value: string) => void
+    mocks.publishWorkoutVersion.mockReturnValueOnce(new Promise<string>((resolve) => { resolvePublish = resolve }))
+
+    render(<PrototypeProvider lockedRole="trainer"><DraftRouteHarness /></PrototypeProvider>)
+    expect(await screen.findByDisplayValue('100 kg')).toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText('Carga'), { target: { value: '82 kg' } })
+    fireEvent.click(screen.getByRole('button', { name: /^Publicar treino$/i }))
+
+    await waitFor(() => expect(mocks.publishWorkoutVersion).toHaveBeenCalledTimes(1))
+    expect(screen.getByLabelText('Carga')).toBeDisabled()
+    expect(screen.getByRole('combobox')).toBeDisabled()
+    expect(screen.getByRole('button', { name: /Adicionar exercício/i })).toBeDisabled()
+    expect(screen.getByRole('button', { name: /Copiloto indisponível durante a publicação/i })).toBeDisabled()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Sair do construtor' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Voltar ao construtor' }))
+    expect(await screen.findByDisplayValue('82 kg')).toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText('Carga'), { target: { value: '88 kg' } })
+
+    await act(async () => { resolvePublish('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'); await Promise.resolve() })
+
+    expect(screen.getByDisplayValue('88 kg')).toBeInTheDocument()
+    expect(screen.getByText('rascunhos:1')).toBeInTheDocument()
+    expect(mocks.publishWorkoutVersion).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ exercises: [expect.objectContaining({ load: '82 kg' })] }),
+    )
+  })
+
+  it('reuses the same idempotency key when a failed publication is retried unchanged', async () => {
+    mocks.publishWorkoutVersion
+      .mockRejectedValueOnce(new Error('Falha temporária na publicação.'))
+      .mockResolvedValueOnce('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa')
+
+    render(<PrototypeProvider lockedRole="trainer"><LiveWorkoutBuilderScreen /></PrototypeProvider>)
+    expect(await screen.findByDisplayValue('100 kg')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /^Publicar treino$/i }))
+    expect(await screen.findByText('Falha temporária na publicação.')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /^Publicar treino$/i }))
+    await waitFor(() => expect(mocks.publishWorkoutVersion).toHaveBeenCalledTimes(2))
+
+    expect(mocks.publishWorkoutVersion.mock.calls[0][1].idempotencyKey).toBe(mocks.publishWorkoutVersion.mock.calls[1][1].idempotencyKey)
+    expect(await screen.findByText(/Versão publicada com sucesso/i)).toBeInTheDocument()
   })
 
   it('discards a late proposal after the trainer changes the active student', async () => {
