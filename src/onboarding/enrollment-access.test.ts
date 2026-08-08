@@ -8,6 +8,20 @@ const trainerMembership = {
   trainerName: 'André Lima',
 }
 
+const professionalAccess = {
+  userId: 'trainer-1',
+  workspaceId: 'workspace-1',
+  status: 'verified' as const,
+  mode: 'verified' as const,
+  crefNumber: '123456-G/SP',
+  crefState: 'SP',
+  studioName: 'Studio Horizonte',
+  submittedAt: '2026-08-01T12:00:00.000Z',
+  decidedAt: '2026-08-02T12:00:00.000Z',
+  rejectionReason: null,
+  temporaryAccessExpiresAt: null,
+}
+
 describe('enrollment access gate', () => {
   it('always preserves the explicit demo bypass', () => {
     expect(resolveEnrollmentAccess({ isDemo: true, role: null, membership: null })).toBe('demo')
@@ -22,5 +36,13 @@ describe('enrollment access gate', () => {
     expect(resolveEnrollmentAccess({ isDemo: false, role: 'student', membership: trainerMembership })).toBe('student-onboarding')
     expect(resolveEnrollmentAccess({ isDemo: false, role: 'trainer', membership: null })).toBe('blocked')
     expect(resolveEnrollmentAccess({ isDemo: false, role: 'trainer', membership: { ...trainerMembership, membershipRole: 'student' } })).toBe('blocked')
+  })
+
+  it('gates professional accounts by server-derived verification access', () => {
+    expect(resolveEnrollmentAccess({ isDemo: false, role: 'trainer', membership: trainerMembership, professionalAccess: null })).toBe('trainer-verification')
+    expect(resolveEnrollmentAccess({ isDemo: false, role: 'trainer', membership: trainerMembership, professionalAccess: { ...professionalAccess, status: 'pending', mode: 'blocked', decidedAt: null } })).toBe('trainer-verification')
+    expect(resolveEnrollmentAccess({ isDemo: false, role: 'trainer', membership: trainerMembership, professionalAccess })).toBe('app')
+    expect(resolveEnrollmentAccess({ isDemo: false, role: 'trainer', membership: trainerMembership, professionalAccess: { ...professionalAccess, status: 'unverified', mode: 'temporary_homologation', submittedAt: null, decidedAt: null, temporaryAccessExpiresAt: '2026-08-09T12:00:00.000Z' } })).toBe('app')
+    expect(resolveEnrollmentAccess({ isDemo: false, role: 'trainer', membership: trainerMembership, professionalAccess: { ...professionalAccess, workspaceId: 'another-workspace' } })).toBe('trainer-verification')
   })
 })

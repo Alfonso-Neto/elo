@@ -36,11 +36,11 @@ supabase db push --linked
 
 Não use `db reset --linked` em um projeto compartilhado: esse comando recria o schema remoto. Antes de qualquer alteração posterior, confirme o `project-ref` e mantenha backup do ambiente.
 
-As 13 migrations devem aparecer, em ordem, no histórico remoto. Elas cobrem:
+As 14 migrations devem aparecer, em ordem, no histórico remoto. Elas cobrem:
 
 | Domínio | Persistência e fronteira |
 |---|---|
-| Identidade | perfis, CREF, workspaces, membros e convites |
+| Identidade | perfis, ciclo auditável de verificação do CREF, workspaces, membros e convites |
 | Saúde | consentimentos versionados, relatos de dor, eventos append-only e ciclo profissional serializado |
 | IA | execuções, propostas, decisões, cotas e auditoria |
 | Treino | versões imutáveis, conclusões, anamneses e notas profissionais |
@@ -63,7 +63,34 @@ O cliente constrói os redirects a partir da origem atual para `#/confirmar-emai
 
 Referência oficial: [Redirect URLs](https://supabase.com/docs/guides/auth/redirect-urls).
 
-## 5. Configurar e implantar a IA
+## 5. Verificar o acesso profissional
+
+Professores novos entram com estado `unverified`. Depois de confirmar o e-mail, a própria tela do Elo permite revisar CREF, UF e nome do espaço e enviar a solicitação. Esse envio muda o estado para `pending`; ele **não** aprova o profissional.
+
+Para cada solicitação da coorte:
+
+1. confirme a identidade do titular e consulte o registro em fonte pública oficial do sistema CONFEF/CREF;
+2. registre a evidência e o responsável em um chamado interno;
+3. em um processo confiável de operações com `service_role`, chame `review_trainer_verification` com `p_trainer_user_id`, decisão `verified` ou `rejected`, motivo público quando rejeitada, `p_reviewer_reference` e uma chave de idempotência nova;
+4. peça ao professor para usar **Atualizar situação** e confirme o estado derivado pelo servidor.
+
+O RPC de decisão não é executável por `authenticated`. Nunca coloque `service_role` no navegador, no console do frontend, em `VITE_*` ou neste repositório. A referência do revisor deve apontar para um chamado ou identificador operacional, sem incluir segredo. O motivo de rejeição aparece ao próprio professor e deve ser objetivo, acionável e livre de dados desnecessários.
+
+Antes de aprovar a primeira conta, execute uma consulta de preflight para CREFs verificados duplicados ou fora do formato esperado. A migration falha diante de duplicidade em vez de escolher silenciosamente um titular.
+
+Para uma janela curta de homologação, uma exceção explícita de workspace pode ser usada enquanto a revisão está pendente. Essa exceção:
+
+- precisa ter motivo, responsável e expiração curta;
+- usa um novo registro append-only em `private.temporary_professional_access_grants`, vinculado ao workspace **e ao professor**, limitado a sete dias, e uma revogação append-only quando precisar terminar antes do prazo;
+- é mostrada como **acesso temporário de homologação**, nunca como CREF verificado;
+- libera os domínios profissionais protegidos daquele workspace, não somente a IA;
+- não substitui a revisão do registro e não deve ser renovada automaticamente.
+
+Registros antigos de `private.ai_workspace_access` ficam inertes após esta migration: não autorizam IA nem qualquer outro fluxo profissional. Use os comandos de concessão e revogação documentados no README da função; não edite um grant existente para estender sua validade.
+
+Sem CREF verificado ou exceção vigente, convites, base de alunos, dados de saúde, treinos, agenda, mensagens, nutrição, notificações e IA profissionais devem falhar fechados. O cadastro e a tela de verificação continuam acessíveis.
+
+## 6. Configurar e implantar a IA
 
 A função usa o JWT do usuário e RLS; ela não usa `service_role`. Configure no cofre de secrets da Edge Function:
 
@@ -83,14 +110,14 @@ supabase functions deploy assistant-triage --project-ref <project-ref-homologaca
 
 Mantenha `verify_jwt = true`. A configuração de secrets e a função são descritas nas referências oficiais [Environment Variables](https://supabase.com/docs/guides/functions/secrets) e [Edge Functions](https://supabase.com/docs/guides/functions).
 
-Professores cadastrados começam não verificados. Para a coorte, escolha uma destas opções:
+Para executar a IA na coorte, o professor também precisa de uma destas condições já descritas:
 
 1. concluir a verificação profissional; ou
 2. criar a exceção temporária e auditável de workspace descrita no README da função, com motivo e expiração curta.
 
-Sem uma dessas condições, a IA deve falhar fechada enquanto o restante do acompanhamento continua funcional.
+Sem uma dessas condições, a IA e os demais fluxos profissionais protegidos devem falhar fechados.
 
-## 6. Implantar o frontend
+## 7. Implantar o frontend
 
 Configure na plataforma de hospedagem apenas:
 
@@ -101,17 +128,18 @@ VITE_SUPABASE_PUBLISHABLE_KEY=<publishable-key-do-projeto>
 
 Gere `dist/` no pipeline e publique seu conteúdo na raiz do site. Valide no bundle e nas variáveis da plataforma que nenhuma chave `service_role`, `sb_secret_*` ou segredo da OpenAI foi exposto.
 
-## 7. Preparar o vínculo real
+## 8. Preparar o vínculo real
 
 1. Cadastre e confirme a conta **Professor**.
-2. Entre nessa conta e gere um convite em **Alunos → Convidar aluno**.
-3. Cadastre e confirme a conta **Aluno** com o mesmo e-mail informado no convite.
-4. Na entrada do aluno, cole o código de uso único.
-5. Confirme que a conta de professor abre o perfil diretamente pela base de alunos.
+2. Envie o CREF para revisão e conclua a verificação, ou registre uma exceção temporária de homologação com expiração curta.
+3. Entre nessa conta e gere um convite em **Alunos → Convidar aluno**.
+4. Cadastre e confirme a conta **Aluno** com o mesmo e-mail informado no convite.
+5. Na entrada do aluno, cole o código de uso único.
+6. Confirme que a conta de professor abre o perfil diretamente pela base de alunos.
 
 Use perfis de navegador separados. Uma conta autenticada não pode alternar para o papel oposto e rotas incompatíveis são redirecionadas para a área permitida.
 
-## 8. Preparar nutrição sem ultrapassar o escopo profissional
+## 9. Preparar nutrição sem ultrapassar o escopo profissional
 
 1. O aluno abre **Nutrição** e registra o consentimento específico.
 2. Uma integração de servidor confiável chama `ingest_partner_nutrition_plan` com `service_role`, nutricionista/CRN, validade, refeições e chave de idempotência.
@@ -120,11 +148,12 @@ Use perfis de navegador separados. Uma conta autenticada não pode alternar para
 
 Nunca faça a ingestão pelo navegador e nunca exponha `service_role` para facilitar a demonstração.
 
-## 9. Matriz mínima de aceite
+## 10. Matriz mínima de aceite
 
 | Jornada | Resultado esperado |
 |---|---|
 | Cadastro professor/aluno | confirmação por e-mail, papel imutável e sessão restaurada |
+| Verificação profissional | envio não aprova, revisão somente por serviço confiável, rejeição corrigível e exceção temporária claramente identificada |
 | Convite | código de uso único, e-mail correspondente e vínculo no workspace correto |
 | Dor | consentimento, checagem de segurança, registro imutável e sinal para o professor |
 | Copiloto | proposta estruturada, incertezas, decisão auditada e nenhum autopublish |
@@ -139,13 +168,14 @@ Nunca faça a ingestão pelo navegador e nunca exponha `service_role` para facil
 
 Faça também testes em 390 px, 768 px e desktop, por teclado e com redução de movimento ativada.
 
-## 10. Evidências e decisão
+## 11. Evidências e decisão
 
 Registre para cada rodada:
 
 - commit e data do build;
 - URLs do frontend e do projeto Supabase;
 - migrations aplicadas;
+- referência operacional e resultado da revisão profissional, sem copiar segredo ou documento pessoal;
 - versão implantada da Edge Function;
 - contas sintéticas usadas e papel de cada uma;
 - jornada, resultado, captura e identificador do defeito;

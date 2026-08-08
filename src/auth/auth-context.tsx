@@ -2,6 +2,11 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import type { AuthChangeEvent, Session } from '@supabase/supabase-js'
 import { publicSupabaseConfig, supabase } from '../lib/supabase'
 import { boundedText, isCanonicalUuid } from '../onboarding/boundary-validation'
+import {
+  getProfessionalAccess,
+  verificationAccessErrorMessage,
+  type ProfessionalAccess,
+} from '../onboarding/trainer-verification-service'
 import type { Role } from '../types'
 
 export type AuthProfile = {
@@ -34,6 +39,7 @@ type AuthContextValue = {
   session: Session | null
   profile: AuthProfile | null
   membership: ActiveMembership | null
+  professionalAccess: ProfessionalAccess | null
   isDemo: boolean
   recoveryMode: boolean
   accessError: string | null
@@ -43,6 +49,7 @@ type AuthContextValue = {
   requestPasswordReset: (email: string) => Promise<void>
   updatePassword: (password: string) => Promise<void>
   refreshMembership: () => Promise<ActiveMembership | null>
+  refreshProfessionalAccess: () => Promise<ProfessionalAccess | null>
   signOut: () => Promise<void>
   enterDemo: () => void
   leaveDemo: () => void
@@ -90,21 +97,33 @@ function homeFor(role: Role) {
   return role === 'trainer' ? 'dashboard' : 'today'
 }
 
+function professionalScope(userId: string, workspaceId: string) {
+  return `${userId}:${workspaceId}`
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [isDemo, setIsDemo] = useState(() => new URLSearchParams(window.location.search).get('demo') === '1')
   const [loading, setLoading] = useState(() => !isDemo && publicSupabaseConfig.configured)
   const [session, setSession] = useState<Session | null>(null)
   const [profile, setProfile] = useState<AuthProfile | null>(null)
   const [membership, setMembership] = useState<ActiveMembership | null>(null)
+  const [professionalAccess, setProfessionalAccess] = useState<ProfessionalAccess | null>(null)
   const [recoveryMode, setRecoveryMode] = useState(false)
   const [accessError, setAccessError] = useState<string | null>(publicSupabaseConfig.issue)
-  const requestVersion = useRef(0)
+  const authRequestVersion = useRef(0)
+  const professionalAccessRequestVersion = useRef(0)
+  const activeAuthUserId = useRef<string | null>(null)
+  const activeProfessionalScope = useRef<string | null>(null)
 
   const loadAuthoritativeProfile = useCallback(async (nextSession: Session, event?: AuthChangeEvent) => {
     if (!supabase) return
-    const version = ++requestVersion.current
+    const version = ++authRequestVersion.current
+    professionalAccessRequestVersion.current += 1
+    activeAuthUserId.current = nextSession.user.id
+    activeProfessionalScope.current = null
     setLoading(true)
     setAccessError(null)
+    setProfessionalAccess(null)
 
     const { data, error } = await supabase
       .from('profiles')
@@ -112,12 +131,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .eq('id', nextSession.user.id)
       .maybeSingle()
 
-    if (version !== requestVersion.current) return
+    if (version !== authRequestVersion.current || activeAuthUserId.current !== nextSession.user.id) return
     const nextProfile = error ? null : normalizeProfile(data, nextSession.user.id)
     if (!nextProfile) {
       setSession(null)
       setProfile(null)
       setMembership(null)
+      setProfessionalAccess(null)
+      activeAuthUserId.current = null
+      activeProfessionalScope.current = null
       setLoading(false)
       setAccessError('Não foi possível validar o perfil desta conta. Entre novamente ou fale com o suporte.')
       await supabase.auth.signOut({ scope: 'local' })
@@ -125,7 +147,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     const { data: membershipData, error: membershipError } = await supabase.rpc('get_my_active_membership')
-    if (version !== requestVersion.current) return
+    if (version !== authRequestVersion.current || activeAuthUserId.current !== nextSession.user.id) return
     const nextMembership = membershipError ? null : normalizeMembership(membershipData)
     const hasExpectedMembership = nextProfile.accountRole === 'student'
       ? !nextMembership || nextMembership.membershipRole === 'student'
@@ -134,21 +156,61 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setSession(null)
       setProfile(null)
       setMembership(null)
+      setProfessionalAccess(null)
+      activeAuthUserId.current = null
+      activeProfessionalScope.current = null
       setLoading(false)
       setAccessError('Não foi possível validar o espaço desta conta. Entre novamente ou fale com o suporte.')
       await supabase.auth.signOut({ scope: 'local' })
       return
     }
 
-    setSession(nextSession)
-    setProfile(nextProfile)
-    setMembership(nextMembership)
-    setLoading(false)
+    const nextProfessionalScope = nextProfile.accountRole === 'trainer' && nextMembership
+      ? professionalScope(nextProfile.id, nextMembership.workspaceId)
+      : null
+    activeProfessionalScope.current = nextProfessionalScope
+
     if (event === 'PASSWORD_RECOVERY') {
+      setSession(nextSession)
+      setProfile(nextProfile)
+      setMembership(nextMembership)
+      setProfessionalAccess(null)
+      setLoading(false)
       setRecoveryMode(true)
       window.history.replaceState(null, '', '#/redefinir-senha')
       return
     }
+
+    let nextProfessionalAccess: ProfessionalAccess | null = null
+    if (nextProfile.accountRole === 'trainer' && nextMembership) {
+      try {
+        nextProfessionalAccess = await getProfessionalAccess(nextMembership.workspaceId, nextProfile.id)
+      } catch {
+        if (
+          version !== authRequestVersion.current
+          || activeAuthUserId.current !== nextSession.user.id
+          || activeProfessionalScope.current !== nextProfessionalScope
+        ) return
+        setSession(nextSession)
+        setProfile(nextProfile)
+        setMembership(nextMembership)
+        setProfessionalAccess(null)
+        setLoading(false)
+        setAccessError(verificationAccessErrorMessage)
+        return
+      }
+      if (
+        version !== authRequestVersion.current
+        || activeAuthUserId.current !== nextSession.user.id
+        || activeProfessionalScope.current !== nextProfessionalScope
+      ) return
+    }
+
+    setSession(nextSession)
+    setProfile(nextProfile)
+    setMembership(nextMembership)
+    setProfessionalAccess(nextProfessionalAccess)
+    setLoading(false)
     setRecoveryMode(false)
     const route = window.location.hash.replace('#/', '')
     if (['entrar', 'cadastro', 'confirmar-email', 'recuperar-senha'].includes(route)) {
@@ -159,10 +221,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const client = supabase
     if (isDemo || !client) {
-      requestVersion.current += 1
+      authRequestVersion.current += 1
+      professionalAccessRequestVersion.current += 1
+      activeAuthUserId.current = null
+      activeProfessionalScope.current = null
       setSession(null)
       setProfile(null)
       setMembership(null)
+      setProfessionalAccess(null)
       setLoading(false)
       return
     }
@@ -172,9 +238,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     void client.auth.getSession().then(({ data, error }) => {
       if (!active) return
       if (error || !data.session) {
+        authRequestVersion.current += 1
+        professionalAccessRequestVersion.current += 1
+        activeAuthUserId.current = null
+        activeProfessionalScope.current = null
         setSession(null)
         setProfile(null)
         setMembership(null)
+        setProfessionalAccess(null)
         setLoading(false)
         if (error) setAccessError('Não foi possível validar sua sessão. Tente entrar novamente.')
         return
@@ -186,10 +257,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       window.setTimeout(() => {
         if (!active) return
         if (!nextSession || event === 'SIGNED_OUT') {
-          requestVersion.current += 1
+          authRequestVersion.current += 1
+          professionalAccessRequestVersion.current += 1
+          activeAuthUserId.current = null
+          activeProfessionalScope.current = null
           setSession(null)
           setProfile(null)
           setMembership(null)
+          setProfessionalAccess(null)
           setRecoveryMode(false)
           setLoading(false)
           return
@@ -200,7 +275,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     return () => {
       active = false
-      requestVersion.current += 1
+      authRequestVersion.current += 1
+      professionalAccessRequestVersion.current += 1
+      activeAuthUserId.current = null
+      activeProfessionalScope.current = null
       listener.subscription.unsubscribe()
     }
   }, [isDemo, loadAuthoritativeProfile])
@@ -261,10 +339,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (error) throw new Error(genericPasswordMessage)
     const { error: signOutError } = await client.auth.signOut({ scope: 'global' })
     if (signOutError) await client.auth.signOut({ scope: 'local' })
-    requestVersion.current += 1
+    authRequestVersion.current += 1
+    professionalAccessRequestVersion.current += 1
+    activeAuthUserId.current = null
+    activeProfessionalScope.current = null
     setSession(null)
     setProfile(null)
     setMembership(null)
+    setProfessionalAccess(null)
     setRecoveryMode(false)
     window.history.replaceState(null, '', '#/entrar')
   }, [ensureClient])
@@ -282,16 +364,75 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return nextMembership
   }, [profile, session])
 
+  const refreshProfessionalAccess = useCallback(async () => {
+    if (!session || profile?.accountRole !== 'trainer' || !membership || membership.membershipRole === 'student') {
+      if (!session || activeAuthUserId.current === session.user.id) setProfessionalAccess(null)
+      return null
+    }
+    const expectedUserId = session.user.id
+    const expectedScope = professionalScope(profile.id, membership.workspaceId)
+    if (
+      profile.id !== expectedUserId
+      || activeAuthUserId.current !== expectedUserId
+      || activeProfessionalScope.current !== expectedScope
+    ) return null
+    const version = ++professionalAccessRequestVersion.current
+    setAccessError(null)
+    try {
+      const nextAccess = await getProfessionalAccess(membership.workspaceId, profile.id)
+      if (
+        version !== professionalAccessRequestVersion.current
+        || activeAuthUserId.current !== expectedUserId
+        || activeProfessionalScope.current !== expectedScope
+      ) return null
+      setProfessionalAccess(nextAccess)
+      return nextAccess
+    } catch {
+      if (
+        version !== professionalAccessRequestVersion.current
+        || activeAuthUserId.current !== expectedUserId
+        || activeProfessionalScope.current !== expectedScope
+      ) return null
+      setProfessionalAccess(null)
+      setAccessError(verificationAccessErrorMessage)
+      throw new Error(verificationAccessErrorMessage)
+    }
+  }, [membership, profile, session])
+
+  useEffect(() => {
+    if (professionalAccess?.mode !== 'temporary_homologation' || !professionalAccess.temporaryAccessExpiresAt) return
+    const expiration = Date.parse(professionalAccess.temporaryAccessExpiresAt)
+    let timer: number | undefined
+    const expireCachedAccess = () => {
+      setProfessionalAccess(null)
+      void refreshProfessionalAccess().catch(() => undefined)
+    }
+    const scheduleExpiry = () => {
+      const remaining = expiration - Date.now()
+      if (remaining <= 0) {
+        expireCachedAccess()
+        return
+      }
+      timer = window.setTimeout(scheduleExpiry, Math.min(remaining + 250, 2_147_000_000))
+    }
+    scheduleExpiry()
+    return () => { if (timer !== undefined) window.clearTimeout(timer) }
+  }, [professionalAccess?.mode, professionalAccess?.temporaryAccessExpiresAt, refreshProfessionalAccess])
+
   const signOut = useCallback(async () => {
     setLoading(true)
     if (supabase) {
       const { error } = await supabase.auth.signOut({ scope: 'global' })
       if (error) await supabase.auth.signOut({ scope: 'local' })
     }
-    requestVersion.current += 1
+    authRequestVersion.current += 1
+    professionalAccessRequestVersion.current += 1
+    activeAuthUserId.current = null
+    activeProfessionalScope.current = null
     setSession(null)
     setProfile(null)
     setMembership(null)
+    setProfessionalAccess(null)
     setRecoveryMode(false)
     setAccessError(null)
     setLoading(false)
@@ -324,6 +465,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     session,
     profile,
     membership,
+    professionalAccess,
     isDemo,
     recoveryMode,
     accessError,
@@ -333,10 +475,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     requestPasswordReset,
     updatePassword,
     refreshMembership,
+    refreshProfessionalAccess,
     signOut,
     enterDemo,
     leaveDemo,
-  }), [accessError, isDemo, loading, membership, profile, recoveryMode, requestPasswordReset, resendConfirmation, refreshMembership, session, signIn, signOut, signUp, updatePassword, enterDemo, leaveDemo])
+  }), [accessError, isDemo, loading, membership, professionalAccess, profile, recoveryMode, requestPasswordReset, resendConfirmation, refreshMembership, refreshProfessionalAccess, session, signIn, signOut, signUp, updatePassword, enterDemo, leaveDemo])
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }

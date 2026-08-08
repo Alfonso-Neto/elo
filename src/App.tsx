@@ -1,12 +1,13 @@
 import { lazy, Suspense, useEffect, useMemo, useState, type ComponentType } from 'react'
 import {
-  Bell, CalendarDays, ClipboardList, Dumbbell, FileCheck2, LayoutDashboard, LoaderCircle, Menu,
+  BadgeCheck, Bell, CalendarDays, ClipboardList, Clock3, Dumbbell, FileCheck2, LayoutDashboard, LoaderCircle, Menu,
   MessageCircle, LogOut, MoreHorizontal, RotateCcw, Salad, Search, Sparkles, UserRound, Users,
 } from 'lucide-react'
 import { Brand, Button, Drawer, Eyebrow, Modal } from './components'
 import { AuthLoadingScreen, AuthPage } from './auth/AuthPage'
 import { AuthProvider, useAuth } from './auth/auth-context'
 import { StudentEnrollmentOnboarding } from './onboarding/EnrollmentScreens'
+import { TrainerVerificationScreen } from './onboarding/TrainerVerificationScreen'
 import { resolveEnrollmentAccess } from './onboarding/enrollment-access'
 import { listEnrolledStudents, type EnrolledStudent } from './onboarding/enrollment-service'
 import { PrototypeProvider, usePrototype } from './prototype-context'
@@ -59,7 +60,7 @@ function RoleSwitch({ compact = false }: { compact?: boolean }) {
 
 function Sidebar() {
   const { role, page, navigate, painReports, messages, setSelectedStudentId, resetPrototype } = usePrototype()
-  const { isDemo, profile, membership, signOut, leaveDemo } = useAuth()
+  const { isDemo, profile, membership, professionalAccess, signOut, leaveDemo } = useAuth()
   const nav = role === 'trainer' ? trainerNav : studentNav
   const openStudents = new Set(painReports.filter((item) => item.status === 'open').map((item) => item.studentId)).size
   const unreadMessages = messages.at(-1)?.sender !== role ? 1 : 0
@@ -67,9 +68,23 @@ function Sidebar() {
   const initials = displayName.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join('').toUpperCase()
   const workspaceTitle = profile ? (membership?.workspaceName ?? 'SEU ESPAÇO') : role === 'trainer' ? 'STUDIO ANDRÉ' : 'MARINA COSTA'
   const workspaceDetail = profile
-    ? role === 'student' ? `Com ${membership?.trainerName ?? 'seu professor'}` : 'Conta de homologação'
+    ? role === 'student'
+      ? `Com ${membership?.trainerName ?? 'seu professor'}`
+      : professionalAccess?.mode === 'verified' ? 'Identidade profissional confirmada' : 'Conta de homologação'
     : role === 'trainer' ? '28 alunos ativos' : 'Acompanhamento ativo'
-  return <aside className="sidebar"><Brand /><div className="workspace-label"><span>{workspaceTitle.toUpperCase()}</span><small>{workspaceDetail}</small></div><nav aria-label="Navegação principal">{nav.map(({ page: target, label, icon: Icon }) => <button key={target} className={page === target || (target === 'students' && page === 'student-detail') || (target === 'forms' && page === 'form-builder') ? 'nav-item active' : 'nav-item'} onClick={() => { if (isDemo && (target === 'copilot' || target === 'builder' || target === 'forms')) setSelectedStudentId('marina'); if (target !== 'more') navigate(target) }} aria-label={label} title={label} aria-current={page === target ? 'page' : undefined}><Icon size={19} strokeWidth={1.8} /><span>{label}</span>{isDemo && label === 'Alunos' && openStudents > 0 && <b>{openStudents}</b>}{isDemo && label === 'Conversas' && unreadMessages > 0 && <b>{unreadMessages}</b>}</button>)}</nav><div className="sidebar-bottom">{isDemo ? <><RoleSwitch /><button className="reset-button" onClick={resetPrototype}><RotateCcw size={15} /> Reiniciar demonstração</button><button className="account-action" onClick={leaveDemo}><LogOut size={15} /> Sair da demonstração</button></> : <button className="account-action" onClick={() => void signOut()}><LogOut size={15} /> Sair da conta</button>}<div className="sidebar-profile"><span className="avatar">{initials}</span><div><strong>{displayName}</strong><small>{role === 'trainer' ? 'Professor · conta ativa' : 'Aluno · conta ativa'}</small></div><MoreHorizontal size={17} /></div></div></aside>
+  const professionalLabel = professionalAccess?.mode === 'verified'
+    ? 'CREF VERIFICADO'
+    : professionalAccess?.mode === 'temporary_homologation' ? 'ACESSO TEMPORÁRIO' : null
+  return <aside className="sidebar"><Brand /><div className="workspace-label"><span>{workspaceTitle.toUpperCase()}</span><small>{workspaceDetail}</small>{role === 'trainer' && professionalLabel && <b className={`professional-status ${professionalAccess?.mode === 'temporary_homologation' ? 'temporary' : ''}`}>{professionalAccess?.mode === 'verified' ? <BadgeCheck size={10} /> : <Clock3 size={10} />}{professionalLabel}</b>}</div><nav aria-label="Navegação principal">{nav.map(({ page: target, label, icon: Icon }) => <button key={target} className={page === target || (target === 'students' && page === 'student-detail') || (target === 'forms' && page === 'form-builder') ? 'nav-item active' : 'nav-item'} onClick={() => { if (isDemo && (target === 'copilot' || target === 'builder' || target === 'forms')) setSelectedStudentId('marina'); if (target !== 'more') navigate(target) }} aria-label={label} title={label} aria-current={page === target ? 'page' : undefined}><Icon size={19} strokeWidth={1.8} /><span>{label}</span>{isDemo && label === 'Alunos' && openStudents > 0 && <b>{openStudents}</b>}{isDemo && label === 'Conversas' && unreadMessages > 0 && <b>{unreadMessages}</b>}</button>)}</nav><div className="sidebar-bottom">{isDemo ? <><RoleSwitch /><button className="reset-button" onClick={resetPrototype}><RotateCcw size={15} /> Reiniciar demonstração</button><button className="account-action" onClick={leaveDemo}><LogOut size={15} /> Sair da demonstração</button></> : <button className="account-action" onClick={() => void signOut()}><LogOut size={15} /> Sair da conta</button>}<div className="sidebar-profile"><span className="avatar">{initials}</span><div><strong>{displayName}</strong><small>{role === 'trainer' ? isDemo ? 'Professor · demonstração' : professionalAccess?.mode === 'verified' ? 'Professor · CREF verificado' : 'Professor · homologação temporária' : 'Aluno · conta ativa'}</small></div><MoreHorizontal size={17} /></div></div></aside>
+}
+
+function ProfessionalAccessBanner() {
+  const { isDemo, professionalAccess } = useAuth()
+  if (isDemo || professionalAccess?.mode !== 'temporary_homologation') return null
+  const expires = professionalAccess.temporaryAccessExpiresAt
+    ? new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(professionalAccess.temporaryAccessExpiresAt))
+    : 'em breve'
+  return <aside className="professional-access-banner" role="status"><Clock3 size={19} /><span><strong>Acesso temporário de homologação — não equivale a CREF verificado.</strong><small>Exceção válida até {expires}. <a href="#/verificacao">Enviar ou acompanhar verificação profissional</a></small></span></aside>
 }
 
 function Topbar() {
@@ -151,16 +166,24 @@ function AppContent() {
     }
     return screens[page] ?? (role === 'trainer' ? <TrainerDashboard /> : <StudentTodayScreen />)
   }, [page, role])
-  return <div className={`app-shell role-${role}`}><Sidebar /><div className="main-shell"><Topbar /><main id="main-content" tabIndex={-1}><span className="sr-only" role="status">Área atual: {pageTitle}</span><Suspense fallback={<RouteLoading />}>{screen}</Suspense></main></div><BottomNav /><Toast /></div>
+  return <div className={`app-shell role-${role}`}><Sidebar /><div className="main-shell"><Topbar /><ProfessionalAccessBanner /><main id="main-content" tabIndex={-1}><span className="sr-only" role="status">Área atual: {pageTitle}</span><Suspense fallback={<RouteLoading />}>{screen}</Suspense></main></div><BottomNav /><Toast /></div>
 }
 
 function AppGate() {
-  const { loading, session, profile, membership, isDemo } = useAuth()
-  const resetRoute = window.location.hash.replace('#/', '') === 'redefinir-senha'
+  const { loading, session, profile, membership, professionalAccess, isDemo } = useAuth()
+  const [, refreshRoute] = useState(0)
+  useEffect(() => {
+    const updateRoute = () => refreshRoute((version) => version + 1)
+    window.addEventListener('hashchange', updateRoute)
+    return () => window.removeEventListener('hashchange', updateRoute)
+  }, [])
+  const route = window.location.hash.replace('#/', '')
+  const resetRoute = route === 'redefinir-senha'
   if (loading) return <AuthLoadingScreen />
   if (!isDemo && (resetRoute || !session || !profile)) return <AuthPage />
-  const access = resolveEnrollmentAccess({ isDemo, role: profile?.accountRole ?? null, membership })
+  const access = resolveEnrollmentAccess({ isDemo, role: profile?.accountRole ?? null, membership, professionalAccess })
   if (access === 'student-onboarding') return <StudentEnrollmentOnboarding />
+  if (access === 'trainer-verification' || (route === 'verificacao' && professionalAccess?.mode === 'temporary_homologation')) return <TrainerVerificationScreen />
   if (access === 'blocked') return <AuthPage />
   return <PrototypeProvider lockedRole={isDemo ? undefined : profile?.accountRole}><AppContent /></PrototypeProvider>
 }

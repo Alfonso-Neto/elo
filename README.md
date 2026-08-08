@@ -5,7 +5,7 @@ Aplicação web mobile-first para validar o Elo entre professor e aluno. O visua
 ## Estado atual
 
 - **Demonstração:** cenário fictício completo no navegador, persistido em `localStorage` e isolado das contas reais.
-- **Homologação:** autenticação, papéis, vínculos, consentimentos, dor, Copiloto, treinos, anamneses, agenda, mensagens, nutrição e notificações usam Supabase, RLS e registros versionados/imutáveis conforme o domínio.
+- **Homologação:** autenticação, papéis, verificação profissional, vínculos, consentimentos, dor, Copiloto, treinos, anamneses, agenda, mensagens, nutrição e notificações usam Supabase, RLS e registros versionados/imutáveis conforme o domínio.
 - **IA:** a Edge Function `assistant-triage` gera propostas estruturadas e auditáveis; nenhuma sugestão publica ou altera uma prescrição sem decisão humana.
 - **Fora do escopo:** pagamento e financeiro.
 
@@ -54,11 +54,12 @@ npm test
 npm run build
 ```
 
-Estado validado deste commit: mais de 160 testes automatizados e build de produção dividido em bundles menores que 250 kB.
+Estado validado deste commit: mais de 230 testes automatizados e build de produção dividido em bundles menores que 250 kB.
 
 ## Limites conscientes da homologação
 
 - Convites são exibidos para compartilhamento manual; envio transacional de e-mail ainda não faz parte deste repositório.
 - O plano nutricional só pode entrar por uma integração confiável com `service_role` e consentimento vigente; professor e navegador permanecem em leitura.
 - As demonstrações de exercício são vetoriais. Vídeos próprios/licenciados são uma decisão posterior de conteúdo.
-- Professores novos começam sem verificação profissional. A IA exige verificação ou uma exceção temporária e auditável para a coorte de homologação.
+- Professores novos começam sem verificação profissional. Todos os fluxos profissionais que acessam alunos exigem CREF verificado ou uma nova exceção temporária, explícita, auditável e limitada a sete dias para o workspace de homologação; allowlists legadas de IA não concedem esse acesso amplo.
+- A exceção temporária é exibida como homologação e nunca como CREF verificado. Ela expira no servidor; o navegador também remove o acesso em cache ao chegar nesse horário.
