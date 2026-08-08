@@ -41,20 +41,48 @@ raw secret could have reached logs or a client.
 ## Homologation access
 
 Verified trainers are allowed automatically. An unverified trainer requires a
-time-bounded workspace exception inserted by an administrator:
+new, time-bounded full-professional-access grant inserted by an administrator.
+Legacy rows in `private.ai_workspace_access` are retained only as migration
+history and no longer authorize AI runs or any other professional workflow.
 
 ```sql
-insert into private.ai_workspace_access (workspace_id, reason, expires_at)
-values ('<workspace-uuid>', 'Homologation cohort', now() + interval '14 days')
-on conflict (workspace_id) do update
-set enabled = true,
-    reason = excluded.reason,
-    expires_at = excluded.expires_at;
+insert into private.temporary_professional_access_grants (
+  workspace_id,
+  trainer_user_id,
+  reason,
+  reviewer_reference,
+  idempotency_key,
+  expires_at
+) values (
+  '<workspace-uuid>',
+  '<trainer-user-uuid>',
+  'Coorte de homologação aprovada',
+  'CHAMADO-OPS-1234',
+  'temporary-access:550e8400-e29b-41d4-a716-446655440000',
+  now() + interval '48 hours'
+)
+returning id, expires_at;
 ```
 
-Remove or disable the row when homologation ends. Students may request pain
-triage only for their own authoritative pain report and still need current
-health consent.
+Grants last at most seven days and cannot be edited or deleted. Revoke one by
+appending an attributable revocation (use a fresh idempotency key):
+
+```sql
+insert into private.temporary_professional_access_revocations (
+  grant_id,
+  reason,
+  reviewer_reference,
+  idempotency_key
+) values (
+  '<grant-uuid>',
+  'Homologação encerrada',
+  'CHAMADO-OPS-1234',
+  'temporary-revoke:550e8400-e29b-41d4-a716-446655440000'
+);
+```
+
+Students may request pain triage only for their own authoritative pain report
+and still need current health consent.
 
 ## Client contract
 
