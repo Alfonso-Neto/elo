@@ -92,6 +92,7 @@ function arrangeBuilder() {
 async function openReview() {
   render(<PrototypeProvider lockedRole="trainer"><LiveWorkoutBuilderScreen /></PrototypeProvider>)
   expect(await screen.findByRole('heading', { name: /Treino em suas mãos/i })).toBeInTheDocument()
+  expect(mocks.listEnrolledStudents).toHaveBeenCalledTimes(1)
   fireEvent.click(screen.getByRole('button', { name: /Abrir 1 ponto para revisar com o Copiloto/i }))
   const dialog = screen.getByRole('dialog', { name: /Segundo olhar no rascunho/i })
   fireEvent.click(within(dialog).getByRole('button', { name: /Revisar este rascunho/i }))
@@ -169,6 +170,7 @@ describe('live workout builder copilot', () => {
 
     fireEvent.change(screen.getByRole('combobox'), { target: { value: secondStudentId } })
     expect(await screen.findByDisplayValue('Superiores')).toBeInTheDocument()
+    expect(mocks.listEnrolledStudents).toHaveBeenCalledTimes(1)
     resolveReview({
       state: 'complete', runId: '88888888-8888-4888-8888-888888888888', proposalId,
       completionMode: 'model', reused: false, proposal,

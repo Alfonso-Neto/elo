@@ -42,10 +42,12 @@ function dateTime(value: string) {
 function useTrainerTarget() {
   const { membership, profile } = useAuth()
   const { selectedStudentId, setSelectedStudentId } = usePrototype()
+  const selectedStudentIdRef = useRef(selectedStudentId)
   const [students, setStudents] = useState<EnrolledStudent[]>([])
   const [phase, setPhase] = useState<LoadPhase>('loading')
   const [error, setError] = useState('')
   const scope = useMemo<TrainingScope | null>(() => membership && profile ? { workspaceId: membership.workspaceId, userId: profile.id, role: 'trainer' } : null, [membership, profile])
+  useEffect(() => { selectedStudentIdRef.current = selectedStudentId }, [selectedStudentId])
 
   const load = useCallback(async () => {
     setPhase('loading')
@@ -53,13 +55,13 @@ function useTrainerTarget() {
     try {
       const next = await listEnrolledStudents()
       setStudents(next)
-      if (!next.some((student) => student.userId === selectedStudentId)) setSelectedStudentId(next[0]?.userId ?? '')
+      if (!next.some((student) => student.userId === selectedStudentIdRef.current)) setSelectedStudentId(next[0]?.userId ?? '')
       setPhase('ready')
     } catch (cause) {
       setPhase('error')
       setError(cause instanceof Error ? cause.message : 'Não foi possível carregar os alunos vinculados.')
     }
-  }, [selectedStudentId, setSelectedStudentId])
+  }, [setSelectedStudentId])
   useEffect(() => { void load() }, [load])
   return { students, student: students.find((item) => item.userId === selectedStudentId) ?? null, selectedStudentId, setSelectedStudentId, scope, phase, error, reload: load }
 }
