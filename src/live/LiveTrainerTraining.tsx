@@ -13,7 +13,7 @@ import {
 import { BackButton, Button, Drawer, Eyebrow, MovementDemo, PageIntro, SectionTitle, SuccessState } from '../components'
 import { exerciseLibrary, formTemplateQuestions, formTemplates, generalForm } from '../data'
 import { listEnrolledStudents, type EnrolledStudent } from '../onboarding/enrollment-service'
-import { usePrototype } from '../prototype-context'
+import { usePrototype, type FormSessionDraft } from '../prototype-context'
 import { createIdempotencyKey, createSignalService } from '../signals'
 import type { Exercise, FormQuestion, QuestionType } from '../types'
 import {
@@ -21,6 +21,7 @@ import {
   listWorkoutCompletions, publishWorkoutVersion, type AnamnesisAssignment,
   type AnamnesisSubmission, type TrainingScope,
 } from './training'
+import { validateQuestions } from './training/validation'
 import './live-training.css'
 
 type LoadPhase = 'loading' | 'ready' | 'error'
@@ -455,8 +456,41 @@ const questionTypes: { value: QuestionType; label: string }[] = [
   { value: 'text', label: 'Texto curto' }, { value: 'long', label: 'Texto longo' }, { value: 'single', label: 'Escolha única' }, { value: 'multi', label: 'Múltipla' }, { value: 'scale', label: 'Escala 0–10' }, { value: 'yesno', label: 'Sim / não' }, { value: 'number', label: 'Número' },
 ]
 
+function cloneFormQuestions(questions: FormQuestion[]) {
+  return questions.map((question) => ({
+    ...question,
+    ...(question.options ? { options: [...question.options] } : {}),
+  }))
+}
+
+function normalizeFormQuestions(questions: FormQuestion[]) {
+  return questions.map((question) => {
+    const normalized: FormQuestion = {
+      id: question.id,
+      label: question.label.trim(),
+      type: question.type,
+      required: Boolean(question.required),
+    }
+    if (question.type === 'single' || question.type === 'multi') {
+      normalized.options = (question.options ?? []).map((option) => option.trim())
+    }
+    return normalized
+  })
+}
+
+function matchesFormSnapshot(draft: FormSessionDraft, title: string, questions: FormQuestion[]) {
+  return draft.title === title && JSON.stringify(draft.questions) === JSON.stringify(questions)
+}
+
+function freshFormDraft(): FormSessionDraft {
+  return {
+    title: 'Nova anamnese',
+    questions: [{ id: `q-${crypto.randomUUID()}`, label: '', type: 'text', required: true }],
+  }
+}
+
 export function LiveTrainerFormsScreen() {
-  const { navigate, setFormQuestions, setFormTitle } = usePrototype()
+  const { navigate, setFormQuestions, setFormTitle, setFormDraftStudentId } = usePrototype()
   const target = useTrainerTarget()
   const [assignments, setAssignments] = useState<AnamnesisAssignment[]>([])
   const [submissions, setSubmissions] = useState<AnamnesisSubmission[]>([])
@@ -482,11 +516,12 @@ export function LiveTrainerFormsScreen() {
   const openTemplate = (id: string) => {
     setFormQuestions((formTemplateQuestions[id] ?? generalForm).map((question) => ({ ...question, options: question.options ? [...question.options] : undefined })))
     setFormTitle(formTemplates.find((template) => template.id === id)?.name ?? 'Nova anamnese')
+    setFormDraftStudentId(target.selectedStudentId)
     navigate('form-builder')
   }
 
   if (target.phase !== 'ready' || !target.student || !target.scope) return <div className="page enter"><TargetState phase={target.phase} error={target.error} onRetry={() => void target.reload()} /></div>
-  return <div className="page live-training-screen enter"><PageIntro eyebrow="ANAMNESE · DADO COM FINALIDADE" title={<>Pergunte melhor.<br />Prescreva com mais história.</>} copy="Cada envio é imutável, exige vínculo ativo e depende do consentimento vigente do aluno." action={<Button onClick={() => { setFormQuestions([{ id: `q-${Date.now()}`, label: '', type: 'text', required: true }]); setFormTitle('Nova anamnese'); navigate('form-builder') }}><FilePlus2 size={16} /> Criar do zero</Button>} />
+  return <div className="page live-training-screen enter"><PageIntro eyebrow="ANAMNESE · DADO COM FINALIDADE" title={<>Pergunte melhor.<br />Prescreva com mais história.</>} copy="Cada envio é imutável, exige vínculo ativo e depende do consentimento vigente do aluno." action={<Button onClick={() => { setFormQuestions([{ id: `q-${Date.now()}`, label: '', type: 'text', required: true }]); setFormTitle('Nova anamnese'); setFormDraftStudentId(target.selectedStudentId); navigate('form-builder') }}><FilePlus2 size={16} /> Criar do zero</Button>} />
     <div className="live-target-row"><TargetPicker students={target.students} value={target.selectedStudentId} onChange={target.setSelectedStudentId} label="ANAMNESES DE" /><span><strong>{assignments.length}</strong><small>ENVIOS CARREGADOS</small></span></div>
     <SectionTitle index="01" title="Modelos prontos" copy="Pontos de partida editáveis; nenhum modelo é enviado automaticamente." /><div className="template-grid">{formTemplates.map((template,index) => <button key={template.id} onClick={() => openTemplate(template.id)}><span>{String(index + 1).padStart(2,'0')}</span><FileCheck2 size={21} /><h3>{template.name}</h3><p>{template.niche}</p><footer>{template.questions} perguntas <ArrowRight size={15} /></footer></button>)}</div>
     <section className="section-block"><SectionTitle index="02" title="Histórico real" copy="Respostas só aparecem enquanto a base de acesso e consentimento permitir." />
@@ -499,12 +534,16 @@ export function LiveTrainerFormsScreen() {
 }
 
 export function LiveFormBuilderScreen() {
-  const { navigate, formQuestions, formTitle, setFormQuestions, setFormTitle, notify } = usePrototype()
+  const {
+    navigate, formQuestions, formTitle, formDraftStudentId, formSessionDrafts, formLastSentDrafts,
+    setFormQuestions, setFormTitle, setFormDraftStudentId, setFormSessionDrafts, setFormLastSentDrafts, notify,
+  } = usePrototype()
   const target = useTrainerTarget()
   const [preview, setPreview] = useState(false)
   const [sending, setSending] = useState(false)
   const [sent, setSent] = useState(false)
   const [error, setError] = useState('')
+  const [activeDraftStudentId, setActiveDraftStudentId] = useState('')
   const [assistantOpen, setAssistantOpen] = useState(false)
   const [assistantPhase, setAssistantPhase] = useState<'idle' | 'loading' | 'processing' | 'ready' | 'error'>('idle')
   const [assistantError, setAssistantError] = useState('')
@@ -513,9 +552,15 @@ export function LiveFormBuilderScreen() {
   const [selectedSuggestions, setSelectedSuggestions] = useState<string[]>([])
   const [decidingSuggestion, setDecidingSuggestion] = useState(false)
   const assignmentKey = useRef('')
+  const assignmentRequestVersion = useRef(0)
   const assistantKey = useRef('')
   const assistantRequestVersion = useRef(0)
-  const clearSuggestionReview = () => {
+  const sessionDraftsRef = useRef(formSessionDrafts)
+  const formStateRef = useRef<FormSessionDraft>({ title: formTitle, questions: cloneFormQuestions(formQuestions) })
+  const initialDraftClaimed = useRef(false)
+  useEffect(() => { sessionDraftsRef.current = formSessionDrafts }, [formSessionDrafts])
+  useEffect(() => { formStateRef.current = { title: formTitle, questions: cloneFormQuestions(formQuestions) } }, [formQuestions, formTitle])
+  const clearSuggestionReview = useCallback(() => {
     assistantRequestVersion.current += 1
     assistantKey.current = ''
     setAssistantOpen(false)
@@ -525,19 +570,93 @@ export function LiveFormBuilderScreen() {
     setAssistantProposalId('')
     setSelectedSuggestions([])
     setDecidingSuggestion(false)
+  }, [])
+  const rememberDraft = (nextTitle: string, nextQuestions: FormQuestion[]) => {
+    if (!target.selectedStudentId) return
+    const sessionDraft = { title: nextTitle, questions: cloneFormQuestions(nextQuestions) }
+    setFormSessionDrafts((current) => {
+      const next = { ...current, [target.selectedStudentId]: sessionDraft }
+      sessionDraftsRef.current = next
+      return next
+    })
   }
-  const changed = () => { assignmentKey.current = ''; setSent(false); setError(''); clearSuggestionReview() }
-  useEffect(() => {
+  const changed = () => {
     assignmentKey.current = ''
+    setSent(false)
+    setError('')
     clearSuggestionReview()
-  }, [target.selectedStudentId])
-  useEffect(() => () => { assistantRequestVersion.current += 1 }, [])
-  const update = (id: string, patch: Partial<FormQuestion>) => { changed(); setFormQuestions((items) => items.map((item) => item.id === id ? { ...item, ...patch } : item)) }
-  const add = (question?: Partial<FormQuestion>) => { changed(); setFormQuestions((items) => [...items, { id: `q-${Date.now()}-${items.length}`, label: question?.label ?? '', type: question?.type ?? 'text', options: question?.options, required: question?.required ?? false }]) }
-  const move = (index: number, direction: number) => { changed(); setFormQuestions((items) => { const next = [...items]; const destination = index + direction; if (destination < 0 || destination >= next.length) return items; [next[index], next[destination]] = [next[destination], next[index]]; return next }) }
-  const valid = Boolean(formTitle.trim()) && formQuestions.length > 0 && formQuestions.every((question) => question.label.trim() && (!['single','multi'].includes(question.type) || Boolean(question.options?.length && question.options.every((option) => option.trim()))))
+  }
+  useEffect(() => {
+    if (!target.selectedStudentId) return
+    assignmentKey.current = ''
+    assignmentRequestVersion.current += 1
+    setSending(false)
+    setSent(false)
+    setError('')
+    setPreview(false)
+    clearSuggestionReview()
+
+    const stagedForStudent = formDraftStudentId === target.selectedStudentId
+    let nextDraft = sessionDraftsRef.current[target.selectedStudentId]
+    if (stagedForStudent || (!initialDraftClaimed.current && !nextDraft)) {
+      nextDraft = {
+        title: formStateRef.current.title,
+        questions: cloneFormQuestions(formStateRef.current.questions),
+      }
+      setFormSessionDrafts((current) => {
+        const next = { ...current, [target.selectedStudentId]: nextDraft! }
+        sessionDraftsRef.current = next
+        return next
+      })
+      if (stagedForStudent) setFormDraftStudentId('')
+    } else if (!nextDraft) {
+      nextDraft = freshFormDraft()
+    }
+    initialDraftClaimed.current = true
+    setFormTitle(nextDraft.title)
+    setFormQuestions(cloneFormQuestions(nextDraft.questions))
+    setActiveDraftStudentId(target.selectedStudentId)
+  }, [target.selectedStudentId, clearSuggestionReview])
+  useEffect(() => () => {
+    assignmentRequestVersion.current += 1
+    assistantRequestVersion.current += 1
+  }, [])
+  const update = (id: string, patch: Partial<FormQuestion>) => {
+    if (sending) return
+    const next = formQuestions.map((item) => {
+      if (item.id !== id) return item
+      const updated = { ...item, ...patch }
+      if (updated.type === 'single' || updated.type === 'multi') {
+        return { ...updated, options: updated.options ?? ['Opção 1', 'Opção 2'] }
+      }
+      const { options: _options, ...withoutOptions } = updated
+      return withoutOptions
+    })
+    changed(); setFormQuestions(next); rememberDraft(formTitle, next)
+  }
+  const add = (question?: Partial<FormQuestion>) => {
+    if (sending || formQuestions.length >= 50) return
+    const type = question?.type ?? 'text'
+    const nextQuestion: FormQuestion = { id: `q-${crypto.randomUUID()}`, label: question?.label ?? '', type, required: question?.required ?? false }
+    if (type === 'single' || type === 'multi') nextQuestion.options = question?.options ? [...question.options] : ['Opção 1', 'Opção 2']
+    const next = [...formQuestions, nextQuestion]
+    changed(); setFormQuestions(next); rememberDraft(formTitle, next)
+  }
+  const move = (index: number, direction: number) => {
+    if (sending) return
+    const destination = index + direction
+    if (destination < 0 || destination >= formQuestions.length) return
+    const next = [...formQuestions]
+    ;[next[index], next[destination]] = [next[destination], next[index]]
+    changed(); setFormQuestions(next); rememberDraft(formTitle, next)
+  }
+  const normalizedTitle = formTitle.trim()
+  const normalizedQuestions = useMemo(() => normalizeFormQuestions(formQuestions), [formQuestions])
+  const valid = normalizedTitle.length >= 2 && normalizedTitle.length <= 120 && validateQuestions(normalizedQuestions)
+  const lastSentDraft = formLastSentDrafts[target.selectedStudentId]
+  const isSent = sent || Boolean(lastSentDraft && matchesFormSnapshot(lastSentDraft, normalizedTitle, normalizedQuestions))
   const requestSuggestions = async () => {
-    if (!target.scope || !target.student || assistantPhase === 'loading') return
+    if (!target.scope || !target.student || assistantPhase === 'loading' || sending) return
     const requestVersion = ++assistantRequestVersion.current
     const key = assistantKey.current || createIdempotencyKey('form-question-copilot')
     assistantKey.current = key
@@ -570,7 +689,7 @@ export function LiveFormBuilderScreen() {
     setAssistantOpen(false)
   }
   const decideSuggestions = async (decision: 'accepted' | 'rejected') => {
-    if (!assistantProposalId || !assistantProposal || decidingSuggestion) return
+    if (!assistantProposalId || !assistantProposal || decidingSuggestion || sending) return
     const requestVersion = assistantRequestVersion.current
     setDecidingSuggestion(true); setAssistantError('')
     try {
@@ -592,7 +711,9 @@ export function LiveFormBuilderScreen() {
         assignmentKey.current = ''
         setSent(false)
         setError('')
-        setFormQuestions((items) => [...items, ...mapped])
+        const next = [...formQuestions, ...mapped]
+        setFormQuestions(next)
+        rememberDraft(formTitle, next)
         notify('Sugestões adicionadas ao rascunho', `${mapped.length} ${mapped.length === 1 ? 'pergunta foi incluída' : 'perguntas foram incluídas'} para sua edição. Nada foi enviado ao aluno.`)
       } else {
         notify('Sugestões descartadas', 'A decisão foi registrada e nenhuma pergunta foi adicionada.')
@@ -605,27 +726,97 @@ export function LiveFormBuilderScreen() {
     } finally { if (requestVersion === assistantRequestVersion.current) setDecidingSuggestion(false) }
   }
   const send = async () => {
-    if (!target.scope || !target.student || !valid || sending) return
+    if (!target.scope || !target.student || !valid || sending || isSent) return
+    const student = target.student
+    const draftTitleSnapshot = formTitle
+    const draftQuestionsSnapshot = cloneFormQuestions(formQuestions)
+    const publishedTitle = normalizedTitle
+    const publishedQuestions = cloneFormQuestions(normalizedQuestions)
+    const requestVersion = ++assignmentRequestVersion.current
     const key = assignmentKey.current || createIdempotencyKey('assign-anamnesis')
     assignmentKey.current = key
+    clearSuggestionReview()
     setSending(true); setError('')
     try {
-      await assignAnamnesis(target.scope, { studentUserId: target.student.userId, title: formTitle, questions: formQuestions, idempotencyKey: key })
-      setSent(true); notify('Anamnese enviada', `${target.student.displayName} recebeu uma atribuição imutável.`)
+      await assignAnamnesis(target.scope, { studentUserId: student.userId, title: publishedTitle, questions: publishedQuestions, idempotencyKey: key })
+      const sentSnapshot = { title: publishedTitle, questions: cloneFormQuestions(publishedQuestions) }
+      setFormLastSentDrafts((current) => ({ ...current, [student.userId]: sentSnapshot }))
+      setFormSessionDrafts((current) => {
+        const currentDraft = current[student.userId]
+        if (!currentDraft || !matchesFormSnapshot(currentDraft, draftTitleSnapshot, draftQuestionsSnapshot)) return current
+        const next = { ...current }
+        delete next[student.userId]
+        sessionDraftsRef.current = next
+        return next
+      })
+      if (requestVersion !== assignmentRequestVersion.current) {
+        notify('Anamnese enviada', `${student.displayName} recebeu a versão confirmada. Qualquer rascunho mais novo foi preservado.`)
+        return
+      }
+      setFormTitle(publishedTitle)
+      setFormQuestions(publishedQuestions)
+      setPreview(false)
+      setSent(true)
+      notify('Anamnese enviada', `${student.displayName} recebeu uma atribuição imutável.`)
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Não foi possível enviar a anamnese.')
-    } finally { setSending(false) }
+      const message = cause instanceof Error ? cause.message : 'Não foi possível enviar a anamnese.'
+      if (requestVersion !== assignmentRequestVersion.current) {
+        notify('Envio não concluído', `${student.displayName}: ${message}`)
+        return
+      }
+      setError(message)
+    } finally {
+      if (requestVersion === assignmentRequestVersion.current) setSending(false)
+    }
   }
 
   if (target.phase !== 'ready' || !target.student || !target.scope) return <div className="page enter"><TargetState phase={target.phase} error={target.error} onRetry={() => void target.reload()} /></div>
-  return <div className="page form-builder-page live-training-screen enter"><BackButton onClick={() => navigate('forms')} label="Voltar para anamneses" /><PageIntro eyebrow={`CONSTRUTOR · ${target.student.displayName.toUpperCase()}`} title="Cada pergunta tem um motivo." copy="Colete somente o necessário. O aluno verá a finalidade e confirmará o consentimento antes de responder." action={<div className="builder-actions"><Button variant="secondary" onClick={() => void requestSuggestions()}><Sparkles size={16} /> Revisar lacunas</Button><Button variant="secondary" onClick={() => setPreview(true)}><Eye size={16} /> Pré-visualizar</Button><Button disabled={!valid || sending} onClick={() => void send()}>{sending ? <LoaderCircle className="spin" size={16} /> : <Send size={16} />} Enviar</Button></div>} />
-    <section className="form-meta"><label><span>TÍTULO DO FORMULÁRIO</span><input value={formTitle} onChange={(event) => { changed(); setFormTitle(event.target.value.slice(0,90)) }} /></label><div><strong>{formQuestions.length}</strong><span>perguntas</span></div></section>
-    <div className="question-builder-list">{formQuestions.map((question,index) => <article key={question.id} className="question-card"><header><GripVertical size={17} /><span>{String(index + 1).padStart(2,'0')}</span><label><span>PERGUNTA</span><input value={question.label} onChange={(event) => update(question.id,{ label:event.target.value.slice(0,180) })} placeholder="Escreva uma pergunta clara..." /></label><div className="question-actions"><button onClick={() => move(index,-1)} disabled={index === 0} aria-label="Mover pergunta para cima"><ArrowUp size={15} /></button><button onClick={() => move(index,1)} disabled={index === formQuestions.length - 1} aria-label="Mover pergunta para baixo"><ArrowDown size={15} /></button><button className="danger-action" onClick={() => { changed(); setFormQuestions((items) => items.filter((item) => item.id !== question.id)) }} aria-label="Remover pergunta"><Trash2 size={15} /></button></div></header><div className="question-types">{questionTypes.map((type) => <button className={question.type === type.value ? 'active' : ''} aria-pressed={question.type === type.value} key={type.value} onClick={() => update(question.id,{ type:type.value, options:['single','multi'].includes(type.value) ? question.options ?? ['Opção 1','Opção 2'] : undefined })}>{type.label}</button>)}</div>{['single','multi'].includes(question.type) && <div className="options-editor">{(question.options ?? []).map((option,optionIndex) => <label key={`${question.id}-${optionIndex}`}><i /><input value={option} onChange={(event) => update(question.id,{ options:question.options?.map((item,i) => i === optionIndex ? event.target.value.slice(0,120) : item) })} /><button onClick={() => update(question.id,{ options:question.options?.filter((_,i) => i !== optionIndex) })} aria-label="Remover opção"><X size={14} /></button></label>)}<button onClick={() => update(question.id,{ options:[...(question.options ?? []),`Opção ${(question.options?.length ?? 0) + 1}`] })}>+ adicionar opção</button></div>}<footer><label className="switch-label"><input type="checkbox" checked={question.required ?? false} onChange={(event) => update(question.id,{ required:event.target.checked })} /><i /><span>Resposta obrigatória</span></label></footer></article>)}</div>
-    <button className="add-block" onClick={() => add()}><Plus size={19} /><span><strong>Adicionar pergunta</strong><small>Texto, escolha, escala, sim/não ou número</small></span></button>
-    {!valid && <p className="builder-validation"><AlertCircle size={15} /> Informe o título, as perguntas e todas as opções necessárias.</p>}{error && <p className="builder-validation" role="alert"><AlertCircle size={15} /> {error}</p>}
-    {sent && <SuccessState title="Anamnese atribuída." copy="Ela já está disponível para o aluno. As perguntas desta versão não poderão ser alteradas." action={<Button onClick={() => navigate('forms')}>Ver histórico <ArrowRight size={16} /></Button>} />}
-    {assistantOpen && <Drawer title="Lacunas para o seu olhar" eyebrow="COPILOTO · NADA ENTRA SOZINHO" onClose={closeSuggestions}>{assistantPhase === 'loading' && <div className="live-loading"><LoaderCircle className="spin" size={22} /><p>Revisando somente o título e as perguntas deste rascunho...</p></div>}{assistantPhase === 'processing' && <div className="empty-state compact"><Sparkles size={26} /><h3>A revisão ainda está sendo preparada.</h3><p>Nenhuma pergunta foi adicionada. Use a mesma solicitação para consultar novamente.</p><Button variant="secondary" onClick={() => void requestSuggestions()}>Verificar novamente</Button></div>}{assistantPhase === 'error' && <div className="empty-state compact"><ShieldCheck size={26} /><h3>O Copiloto não abriu agora.</h3><p>{assistantError}</p><Button variant="secondary" onClick={() => void requestSuggestions()}>Tentar novamente</Button></div>}{assistantPhase === 'ready' && assistantProposal && <><p className="modal-lead">{assistantProposal.summary}</p><div className="assistant-question-suggestions">{assistantProposal.questions.map((question) => { const selected = selectedSuggestions.includes(question.id); return <button key={question.id} className={selected ? 'selected' : ''} aria-pressed={selected} onClick={() => setSelectedSuggestions((items) => items.includes(question.id) ? items.filter((id) => id !== question.id) : [...items, question.id])}><i>{selected && <Check size={13} />}</i><span><strong>{question.question}</strong><small>{question.reason}</small></span></button> })}</div>{assistantProposal.uncertainties.length > 0 && <div className="copilot-uncertainties"><Eyebrow>LIMITES DESTA REVISÃO</Eyebrow>{assistantProposal.uncertainties.map((item) => <p key={item}>{item}</p>)}</div>}{assistantError && <p className="builder-validation" role="alert"><AlertCircle size={15} /> {assistantError}</p>}<div className="suggestion-decisions"><Button variant="ghost" disabled={decidingSuggestion} onClick={() => void decideSuggestions('rejected')}>Descartar tudo</Button><Button disabled={decidingSuggestion || selectedSuggestions.length === 0} onClick={() => void decideSuggestions('accepted')}>{decidingSuggestion ? <LoaderCircle className="spin" size={16} /> : <Check size={16} />} Adicionar {selectedSuggestions.length} ao rascunho</Button></div><p className="anchor-copy">O Copiloto propõe; você seleciona, edita e decide se envia.</p></>}</Drawer>}
-    {preview && <Drawer title={formTitle || 'Anamnese sem título'} eyebrow={`COMO ${target.student.displayName.split(/\s+/)[0].toUpperCase()} RESPONDERÁ`} onClose={() => setPreview(false)}><div className="consent-mini"><ShieldCheck size={18} /><span><strong>Consentimento explícito</strong><small>Dado de saúde · finalidade restrita ao acompanhamento.</small></span></div><FormPreview questions={formQuestions} /><Button className="wide" disabled={!valid || sending} onClick={() => void send()}>Confirmar e enviar</Button></Drawer>}
+  if (activeDraftStudentId !== target.selectedStudentId) return <div className="page enter"><div className="live-loading"><LoaderCircle className="spin" size={22} /><p>Preparando o rascunho deste aluno...</p></div></div>
+  const hasSessionDraft = Boolean(formSessionDrafts[target.selectedStudentId])
+  return <div className="page form-builder-page live-training-screen enter">
+    <BackButton onClick={() => navigate('forms')} label="Voltar para anamneses" />
+    <PageIntro
+      eyebrow={`CONSTRUTOR · ${target.student.displayName.toUpperCase()}`}
+      title="Cada pergunta tem um motivo."
+      copy="Colete somente o necessário. O aluno verá a finalidade e confirmará o consentimento antes de responder."
+      action={<div className="builder-actions">
+        <Button variant="secondary" disabled={sending} onClick={() => void requestSuggestions()}><Sparkles size={16} /> Revisar lacunas</Button>
+        <Button variant="secondary" onClick={() => setPreview(true)}><Eye size={16} /> Pré-visualizar</Button>
+        <Button disabled={!valid || sending || isSent} onClick={() => void send()}>{isSent ? <Check size={16} /> : sending ? <LoaderCircle className="spin" size={16} /> : <Send size={16} />} {isSent ? 'Enviado' : 'Enviar'}</Button>
+      </div>}
+    />
+    <div className="live-target-row">
+      <TargetPicker students={target.students} value={target.selectedStudentId} onChange={target.setSelectedStudentId} label="ANAMNESE PARA" disabled={sending} />
+      <span><strong>{formQuestions.length}</strong><small>{isSent ? 'VERSÃO ENVIADA' : hasSessionDraft ? 'RASCUNHO PRESERVADO' : 'NOVO RASCUNHO'}</small></span>
+    </div>
+    <section className="form-meta">
+      <label><span>TÍTULO DO FORMULÁRIO</span><input value={formTitle} disabled={sending} onChange={(event) => { if (sending) return; const nextTitle = event.target.value.slice(0, 90); changed(); setFormTitle(nextTitle); rememberDraft(nextTitle, formQuestions) }} /></label>
+      <div><strong>{formQuestions.length}</strong><span>perguntas</span></div>
+    </section>
+    <div className="question-builder-list">{formQuestions.map((question,index) => <article key={question.id} className="question-card">
+      <header>
+        <GripVertical size={17} />
+        <span>{String(index + 1).padStart(2,'0')}</span>
+        <label><span>PERGUNTA</span><input value={question.label} disabled={sending} onChange={(event) => update(question.id,{ label:event.target.value.slice(0,180) })} placeholder="Escreva uma pergunta clara..." /></label>
+        <div className="question-actions">
+          <button onClick={() => move(index,-1)} disabled={sending || index === 0} aria-label="Mover pergunta para cima"><ArrowUp size={15} /></button>
+          <button onClick={() => move(index,1)} disabled={sending || index === formQuestions.length - 1} aria-label="Mover pergunta para baixo"><ArrowDown size={15} /></button>
+          <button className="danger-action" disabled={sending} onClick={() => { if (sending) return; const next = formQuestions.filter((item) => item.id !== question.id); changed(); setFormQuestions(next); rememberDraft(formTitle, next) }} aria-label="Remover pergunta"><Trash2 size={15} /></button>
+        </div>
+      </header>
+      <div className="question-types">{questionTypes.map((type) => <button className={question.type === type.value ? 'active' : ''} aria-pressed={question.type === type.value} disabled={sending} key={type.value} onClick={() => update(question.id,{ type:type.value })}>{type.label}</button>)}</div>
+      {(question.type === 'single' || question.type === 'multi') && <div className="options-editor">
+        {(question.options ?? []).map((option,optionIndex) => <label key={`${question.id}-${optionIndex}`}><i /><input value={option} disabled={sending} onChange={(event) => update(question.id,{ options:question.options?.map((item,i) => i === optionIndex ? event.target.value.slice(0,100) : item) })} /><button disabled={sending || (question.options?.length ?? 0) <= 2} onClick={() => update(question.id,{ options:question.options?.filter((_,i) => i !== optionIndex) })} aria-label="Remover opção"><X size={14} /></button></label>)}
+        <button disabled={sending || (question.options?.length ?? 0) >= 20} onClick={() => update(question.id,{ options:[...(question.options ?? []),`Opção ${(question.options?.length ?? 0) + 1}`] })}>+ adicionar opção</button>
+      </div>}
+      <footer><label className="switch-label"><input type="checkbox" disabled={sending} checked={question.required ?? false} onChange={(event) => update(question.id,{ required:event.target.checked })} /><i /><span>Resposta obrigatória</span></label></footer>
+    </article>)}</div>
+    <button className="add-block" disabled={sending || formQuestions.length >= 50} onClick={() => add()}><Plus size={19} /><span><strong>Adicionar pergunta</strong><small>{formQuestions.length >= 50 ? 'Limite seguro de 50 perguntas atingido' : 'Texto, escolha, escala, sim/não ou número'}</small></span></button>
+    {!valid && <p className="builder-validation" role="status"><AlertCircle size={15} /> Use título e perguntas com ao menos 2 caracteres; escolhas precisam de 2 a 20 opções únicas.</p>}
+    {error && <p className="builder-validation" role="alert"><AlertCircle size={15} /> {error}</p>}
+    {isSent && <SuccessState title="Anamnese atribuída." copy="Ela já está disponível para o aluno. Edite o rascunho para iniciar uma nova versão e uma nova confirmação." action={<Button onClick={() => navigate('forms')}>Ver histórico <ArrowRight size={16} /></Button>} />}
+    {assistantOpen && <Drawer title="Lacunas para o seu olhar" eyebrow="COPILOTO · NADA ENTRA SOZINHO" onClose={closeSuggestions}>{assistantPhase === 'loading' && <div className="live-loading"><LoaderCircle className="spin" size={22} /><p>Revisando somente o título e as perguntas deste rascunho...</p></div>}{assistantPhase === 'processing' && <div className="empty-state compact"><Sparkles size={26} /><h3>A revisão ainda está sendo preparada.</h3><p>Nenhuma pergunta foi adicionada. Use a mesma solicitação para consultar novamente.</p><Button variant="secondary" disabled={sending} onClick={() => void requestSuggestions()}>Verificar novamente</Button></div>}{assistantPhase === 'error' && <div className="empty-state compact"><ShieldCheck size={26} /><h3>O Copiloto não abriu agora.</h3><p>{assistantError}</p><Button variant="secondary" disabled={sending} onClick={() => void requestSuggestions()}>Tentar novamente</Button></div>}{assistantPhase === 'ready' && assistantProposal && <><p className="modal-lead">{assistantProposal.summary}</p><div className="assistant-question-suggestions">{assistantProposal.questions.map((question) => { const selected = selectedSuggestions.includes(question.id); return <button key={question.id} className={selected ? 'selected' : ''} aria-pressed={selected} disabled={sending || decidingSuggestion} onClick={() => setSelectedSuggestions((items) => items.includes(question.id) ? items.filter((id) => id !== question.id) : [...items, question.id])}><i>{selected && <Check size={13} />}</i><span><strong>{question.question}</strong><small>{question.reason}</small></span></button> })}</div>{assistantProposal.uncertainties.length > 0 && <div className="copilot-uncertainties"><Eyebrow>LIMITES DESTA REVISÃO</Eyebrow>{assistantProposal.uncertainties.map((item) => <p key={item}>{item}</p>)}</div>}{assistantError && <p className="builder-validation" role="alert"><AlertCircle size={15} /> {assistantError}</p>}<div className="suggestion-decisions"><Button variant="ghost" disabled={sending || decidingSuggestion} onClick={() => void decideSuggestions('rejected')}>Descartar tudo</Button><Button disabled={sending || decidingSuggestion || selectedSuggestions.length === 0} onClick={() => void decideSuggestions('accepted')}>{decidingSuggestion ? <LoaderCircle className="spin" size={16} /> : <Check size={16} />} Adicionar {selectedSuggestions.length} ao rascunho</Button></div><p className="anchor-copy">O Copiloto propõe; você seleciona, edita e decide se envia.</p></>}</Drawer>}
+    {preview && <Drawer title={formTitle || 'Anamnese sem título'} eyebrow={`COMO ${target.student.displayName.split(/\s+/)[0].toUpperCase()} RESPONDERÁ`} onClose={() => setPreview(false)}><div className="consent-mini"><ShieldCheck size={18} /><span><strong>Consentimento explícito</strong><small>Dado de saúde · finalidade restrita ao acompanhamento.</small></span></div><FormPreview questions={formQuestions} /><Button className="wide" disabled={!valid || sending || isSent} onClick={() => void send()}>{isSent ? 'Enviado' : sending ? 'Enviando...' : 'Confirmar e enviar'}</Button></Drawer>}
   </div>
 }
 

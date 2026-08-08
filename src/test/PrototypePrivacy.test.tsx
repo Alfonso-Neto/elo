@@ -3,11 +3,16 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import { PrototypeProvider, legacyPrototypeStorageKeys, usePrototype } from '../prototype-context'
 
 function StateProbe() {
-  const { addPainReport, assistantEntry, messages, openExercisePainReport, painReports, setWorkoutSessionDrafts, studentWorkout, workoutSessionDrafts } = usePrototype()
+  const {
+    addPainReport, assistantEntry, formLastSentDrafts, formSessionDrafts, messages, openExercisePainReport, painReports,
+    setFormLastSentDrafts, setFormSessionDrafts, setWorkoutSessionDrafts, studentWorkout, workoutSessionDrafts,
+  } = usePrototype()
   return <div>
     <output>{`pain:${painReports.length} messages:${messages.length} workout:${studentWorkout.length}`}</output>
     <output>{assistantEntry?.movement ?? 'no-assistant-entry'}</output>
     <output>{`drafts:${Object.keys(workoutSessionDrafts).length}`}</output>
+    <output>{`form-drafts:${Object.keys(formSessionDrafts).length}`}</output>
+    <output>{`sent-form-drafts:${Object.keys(formLastSentDrafts).length}`}</output>
     <button onClick={() => addPainReport({
       studentId: 'remote-student',
       studentName: 'Conta remota',
@@ -19,6 +24,11 @@ function StateProbe() {
     <button onClick={() => setWorkoutSessionDrafts({
       'remote-student': { title: 'Rascunho privado', exercises: [{ id: 'private', name: 'Movimento confidencial', muscle: 'Teste', sets: '3', reps: '10', load: '', rest: '', tempo: '', rir: '', note: '' }] },
     })}>Keep private session draft</button>
+    <button onClick={() => {
+      const draft = { title: 'Anamnese confidencial', questions: [{ id: 'private-question', label: 'Histórico sensível', type: 'long' as const, required: true }] }
+      setFormSessionDrafts({ 'remote-student': draft })
+      setFormLastSentDrafts({ 'remote-student': draft })
+    }}>Keep private form draft</button>
   </div>
 }
 
@@ -52,5 +62,11 @@ describe('authenticated workspace privacy boundary', () => {
     expect(screen.getByText('drafts:1')).toBeInTheDocument()
     expect(JSON.stringify({ ...localStorage })).not.toContain('Rascunho privado')
     expect(JSON.stringify({ ...localStorage })).not.toContain('Movimento confidencial')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Keep private form draft' }))
+    expect(screen.getByText('form-drafts:1')).toBeInTheDocument()
+    expect(screen.getByText('sent-form-drafts:1')).toBeInTheDocument()
+    expect(JSON.stringify({ ...localStorage })).not.toContain('Anamnese confidencial')
+    expect(JSON.stringify({ ...localStorage })).not.toContain('Histórico sensível')
   })
 })

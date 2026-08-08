@@ -137,6 +137,16 @@ function DraftRouteHarness() {
   </>
 }
 
+function FormDraftRouteHarness() {
+  const { navigate, page, formSessionDrafts } = usePrototype()
+  return <>
+    <output>{`form-rascunhos:${Object.keys(formSessionDrafts).length}`}</output>
+    {page === 'form-builder'
+      ? <><button onClick={() => navigate('dashboard')}>Sair do formulário</button><LiveFormBuilderScreen /></>
+      : <button onClick={() => navigate('form-builder')}>Voltar ao formulário</button>}
+  </>
+}
+
 beforeEach(() => {
   vi.clearAllMocks()
   localStorage.clear()
@@ -380,5 +390,125 @@ describe('live anamnesis builder copilot', () => {
     fireEvent.click(screen.getByRole('button', { name: /^Enviar$/i }))
     await waitFor(() => expect(mocks.assignAnamnesis).toHaveBeenCalledTimes(2))
     expect(mocks.assignAnamnesis.mock.calls[0][1].idempotencyKey).not.toBe(mocks.assignAnamnesis.mock.calls[1][1].idempotencyKey)
+  })
+
+  it('keeps independent session drafts while switching students and navigating away', async () => {
+    window.history.replaceState(null, '', '/#/form-builder')
+    mocks.listEnrolledStudents.mockResolvedValue([
+      { userId: studentId, displayName: 'Marina Costa', joinedAt: '2026-08-01T12:00:00.000Z' },
+      { userId: secondStudentId, displayName: 'Bianca Souza', joinedAt: '2026-08-02T12:00:00.000Z' },
+    ])
+
+    render(<PrototypeProvider lockedRole="trainer"><FormDraftRouteHarness /></PrototypeProvider>)
+    const title = await screen.findByLabelText('TÍTULO DO FORMULÁRIO')
+    fireEvent.change(title, { target: { value: 'Contexto da Marina' } })
+    expect(screen.getByText('form-rascunhos:1')).toBeInTheDocument()
+
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: secondStudentId } })
+    expect(await screen.findByDisplayValue('Nova anamnese')).toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText('TÍTULO DO FORMULÁRIO'), { target: { value: 'Contexto da Bianca' } })
+    expect(screen.getByText('form-rascunhos:2')).toBeInTheDocument()
+
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: studentId } })
+    expect(await screen.findByDisplayValue('Contexto da Marina')).toBeInTheDocument()
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: secondStudentId } })
+    expect(await screen.findByDisplayValue('Contexto da Bianca')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Sair do formulário' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Voltar ao formulário' }))
+    expect(await screen.findByDisplayValue('Contexto da Bianca')).toBeInTheDocument()
+  })
+
+  it('normalizes ordinary edits into the exact server-valid question shape', async () => {
+    render(<PrototypeProvider lockedRole="trainer"><LiveFormBuilderScreen /></PrototypeProvider>)
+    expect(await screen.findByDisplayValue('Nova anamnese')).toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText('TÍTULO DO FORMULÁRIO'), { target: { value: '  Formulário seguro  ' } })
+    fireEvent.click(screen.getByRole('button', { name: /Adicionar pergunta/i }))
+
+    const questionInput = screen.getAllByPlaceholderText('Escreva uma pergunta clara...').at(-1)!
+    fireEvent.change(questionInput, { target: { value: '  Pergunta segura  ' } })
+    const card = questionInput.closest('article')!
+    fireEvent.click(within(card).getByRole('button', { name: 'Escolha única' }))
+    const optionInputs = within(card).getAllByRole('textbox').slice(-2)
+    fireEvent.change(optionInputs[1], { target: { value: optionInputs[0].getAttribute('value') ?? 'Opção 1' } })
+    expect(screen.getByRole('button', { name: /^Enviar$/i })).toBeDisabled()
+
+    fireEvent.click(within(card).getByRole('button', { name: 'Texto curto' }))
+    expect(screen.getByRole('button', { name: /^Enviar$/i })).toBeEnabled()
+    fireEvent.click(screen.getByRole('button', { name: /^Enviar$/i }))
+    await waitFor(() => expect(mocks.assignAnamnesis).toHaveBeenCalledTimes(1))
+
+    const payload = mocks.assignAnamnesis.mock.calls[0][1]
+    expect(payload.title).toBe('Formulário seguro')
+    expect(payload.questions.at(-1)).toEqual(expect.objectContaining({ label: 'Pergunta segura', type: 'text' }))
+    expect(payload.questions.at(-1)).not.toHaveProperty('options')
+  })
+
+  it('locks mutations during assignment and prevents an unchanged duplicate send', async () => {
+    window.history.replaceState(null, '', '/#/form-builder')
+    let resolveAssignment!: (value: string) => void
+    mocks.assignAnamnesis.mockReturnValueOnce(new Promise<string>((resolve) => { resolveAssignment = resolve }))
+
+    render(<PrototypeProvider lockedRole="trainer"><FormDraftRouteHarness /></PrototypeProvider>)
+    const title = await screen.findByLabelText('TÍTULO DO FORMULÁRIO')
+    fireEvent.click(screen.getByRole('button', { name: /^Enviar$/i }))
+    await waitFor(() => expect(mocks.assignAnamnesis).toHaveBeenCalledTimes(1))
+
+    expect(title).toBeDisabled()
+    expect(screen.getByRole('combobox')).toBeDisabled()
+    expect(screen.getByRole('button', { name: /Revisar lacunas/i })).toBeDisabled()
+    expect(screen.getByRole('button', { name: /Adicionar pergunta/i })).toBeDisabled()
+    expect(screen.getAllByPlaceholderText('Escreva uma pergunta clara...')[0]).toBeDisabled()
+    fireEvent.click(screen.getByRole('button', { name: /^Enviar$/i }))
+    expect(mocks.assignAnamnesis).toHaveBeenCalledTimes(1)
+
+    await act(async () => { resolveAssignment('cccccccc-cccc-4ccc-8ccc-cccccccccccc'); await Promise.resolve() })
+    expect(await screen.findByText('Anamnese atribuída.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^Enviado$/i })).toBeDisabled()
+    fireEvent.click(screen.getByRole('button', { name: /^Enviado$/i }))
+    expect(mocks.assignAnamnesis).toHaveBeenCalledTimes(1)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Sair do formulário' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Voltar ao formulário' }))
+    expect(await screen.findByRole('button', { name: /^Enviado$/i })).toBeDisabled()
+    expect(mocks.assignAnamnesis).toHaveBeenCalledTimes(1)
+  })
+
+  it('reuses the same assignment key when an unchanged failure is retried', async () => {
+    mocks.assignAnamnesis
+      .mockRejectedValueOnce(new Error('Falha temporária no envio.'))
+      .mockResolvedValueOnce('cccccccc-cccc-4ccc-8ccc-cccccccccccc')
+
+    render(<PrototypeProvider lockedRole="trainer"><LiveFormBuilderScreen /></PrototypeProvider>)
+    expect(await screen.findByDisplayValue('Nova anamnese')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /^Enviar$/i }))
+    expect(await screen.findByText('Falha temporária no envio.')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /^Enviar$/i }))
+    await waitFor(() => expect(mocks.assignAnamnesis).toHaveBeenCalledTimes(2))
+
+    expect(mocks.assignAnamnesis.mock.calls[0][1].idempotencyKey).toBe(mocks.assignAnamnesis.mock.calls[1][1].idempotencyKey)
+    expect(await screen.findByText('Anamnese atribuída.')).toBeInTheDocument()
+  })
+
+  it('preserves a newer route-restored draft after an older send finishes late', async () => {
+    window.history.replaceState(null, '', '/#/form-builder')
+    let resolveAssignment!: (value: string) => void
+    mocks.assignAnamnesis.mockReturnValueOnce(new Promise<string>((resolve) => { resolveAssignment = resolve }))
+
+    render(<PrototypeProvider lockedRole="trainer"><FormDraftRouteHarness /></PrototypeProvider>)
+    const title = await screen.findByLabelText('TÍTULO DO FORMULÁRIO')
+    fireEvent.change(title, { target: { value: 'Versão em envio' } })
+    fireEvent.click(screen.getByRole('button', { name: /^Enviar$/i }))
+    await waitFor(() => expect(mocks.assignAnamnesis).toHaveBeenCalledTimes(1))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Sair do formulário' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Voltar ao formulário' }))
+    expect(await screen.findByDisplayValue('Versão em envio')).toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText('TÍTULO DO FORMULÁRIO'), { target: { value: 'Versão mais nova' } })
+
+    await act(async () => { resolveAssignment('cccccccc-cccc-4ccc-8ccc-cccccccccccc'); await Promise.resolve() })
+    expect(screen.getByDisplayValue('Versão mais nova')).toBeInTheDocument()
+    expect(screen.getByText('form-rascunhos:1')).toBeInTheDocument()
+    expect(screen.queryByText('Anamnese atribuída.')).not.toBeInTheDocument()
   })
 })
