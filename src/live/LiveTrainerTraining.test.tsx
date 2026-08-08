@@ -2,7 +2,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { AssistantProposal } from '../assistant/assistant-service'
 import { PrototypeProvider, usePrototype } from '../prototype-context'
-import { LiveFormBuilderScreen, LiveWorkoutBuilderScreen } from './LiveTrainerTraining'
+import type { AnamnesisAssignment, AnamnesisSubmission } from './training'
+import { LiveFormBuilderScreen, LiveTrainerFormsScreen, LiveWorkoutBuilderScreen } from './LiveTrainerTraining'
 
 const mocks = vi.hoisted(() => ({
   useAuth: vi.fn(),
@@ -11,6 +12,8 @@ const mocks = vi.hoisted(() => ({
   listWorkoutCompletions: vi.fn(),
   publishWorkoutVersion: vi.fn(),
   assignAnamnesis: vi.fn(),
+  listAnamnesisAssignments: vi.fn(),
+  listAnamnesisSubmissions: vi.fn(),
   listStudentReports: vi.fn(),
   requestTrainerCopilot: vi.fn(),
   requestFormQuestionSuggestions: vi.fn(),
@@ -32,6 +35,8 @@ vi.mock('./training', async (importOriginal) => ({
   listWorkoutCompletions: mocks.listWorkoutCompletions,
   publishWorkoutVersion: mocks.publishWorkoutVersion,
   assignAnamnesis: mocks.assignAnamnesis,
+  listAnamnesisAssignments: mocks.listAnamnesisAssignments,
+  listAnamnesisSubmissions: mocks.listAnamnesisSubmissions,
 }))
 vi.mock('../assistant/assistant-service', async (importOriginal) => ({
   ...await importOriginal<typeof import('../assistant/assistant-service')>(),
@@ -84,6 +89,30 @@ function formSuggestionResult(summary: string, question: string, questionId = 's
   }
 }
 
+function historyAssignment(id: string, activeStudentId: string, title: string): AnamnesisAssignment {
+  return {
+    id,
+    workspaceId,
+    studentUserId: activeStudentId,
+    assignedByUserId: trainerId,
+    assignedByRole: 'trainer',
+    title,
+    questions: [{ id: 'context', label: 'Como está sua recuperação?', type: 'text', required: true }],
+    assignedAt: '2026-08-08T09:00:00.000Z',
+  }
+}
+
+function historySubmission(id: string, assignmentId: string, activeStudentId: string): AnamnesisSubmission {
+  return {
+    id,
+    assignmentId,
+    workspaceId,
+    studentUserId: activeStudentId,
+    answers: { context: 'Resposta protegida' },
+    submittedAt: '2026-08-08T10:00:00.000Z',
+  }
+}
+
 function arrangeBuilder() {
   mocks.useAuth.mockReturnValue({
     membership: { workspaceId, workspaceName: 'Studio Elo', membershipRole: 'owner', trainerName: 'André Lima' },
@@ -113,6 +142,8 @@ function arrangeBuilder() {
   mocks.decideProposal.mockResolvedValue('99999999-9999-4999-8999-999999999999')
   mocks.publishWorkoutVersion.mockResolvedValue('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa')
   mocks.assignAnamnesis.mockResolvedValue('cccccccc-cccc-4ccc-8ccc-cccccccccccc')
+  mocks.listAnamnesisAssignments.mockResolvedValue({ items: [], nextCursor: null })
+  mocks.listAnamnesisSubmissions.mockResolvedValue({ items: [], nextCursor: null })
   mocks.requestFormQuestionSuggestions.mockResolvedValue(formSuggestionResult('Uma lacuna útil foi encontrada.', 'Como está a qualidade do seu sono?'))
 }
 
@@ -510,5 +541,69 @@ describe('live anamnesis builder copilot', () => {
     expect(screen.getByDisplayValue('Versão mais nova')).toBeInTheDocument()
     expect(screen.getByText('form-rascunhos:1')).toBeInTheDocument()
     expect(screen.queryByText('Anamnese atribuída.')).not.toBeInTheDocument()
+  })
+})
+
+describe('live anamnesis history isolation', () => {
+  it('discards a slower history response after the trainer changes students', async () => {
+    const marinaAssignment = historyAssignment('11111111-aaaa-4111-8111-111111111111', studentId, 'Histórico antigo da Marina')
+    const biancaAssignment = historyAssignment('22222222-aaaa-4222-8222-222222222222', secondStudentId, 'Histórico atual da Bianca')
+    let resolveMarinaAssignments!: (value: { items: AnamnesisAssignment[]; nextCursor: null }) => void
+    let resolveMarinaSubmissions!: (value: { items: AnamnesisSubmission[]; nextCursor: null }) => void
+
+    mocks.listEnrolledStudents.mockResolvedValue([
+      { userId: studentId, displayName: 'Marina Costa', joinedAt: '2026-08-01T12:00:00.000Z' },
+      { userId: secondStudentId, displayName: 'Bianca Souza', joinedAt: '2026-08-02T12:00:00.000Z' },
+    ])
+    mocks.listAnamnesisAssignments.mockImplementation(async (_scope, activeStudentId) => {
+      if (activeStudentId === studentId) return new Promise<{ items: AnamnesisAssignment[]; nextCursor: null }>((resolve) => { resolveMarinaAssignments = resolve })
+      return { items: [biancaAssignment], nextCursor: null }
+    })
+    mocks.listAnamnesisSubmissions.mockImplementation(async (_scope, activeStudentId) => {
+      if (activeStudentId === studentId) return new Promise<{ items: AnamnesisSubmission[]; nextCursor: null }>((resolve) => { resolveMarinaSubmissions = resolve })
+      return { items: [], nextCursor: null }
+    })
+
+    render(<PrototypeProvider lockedRole="trainer"><LiveTrainerFormsScreen /></PrototypeProvider>)
+    await waitFor(() => expect(mocks.listAnamnesisAssignments).toHaveBeenCalledWith(expect.anything(), studentId, { limit: 30 }))
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: secondStudentId } })
+    expect(await screen.findByText('Histórico atual da Bianca')).toBeInTheDocument()
+
+    await act(async () => {
+      resolveMarinaAssignments({ items: [marinaAssignment], nextCursor: null })
+      resolveMarinaSubmissions({ items: [], nextCursor: null })
+      await Promise.resolve()
+    })
+
+    expect(screen.getByText('Histórico atual da Bianca')).toBeInTheDocument()
+    expect(screen.queryByText('Histórico antigo da Marina')).not.toBeInTheDocument()
+    expect(screen.getByRole('combobox')).toHaveValue(secondStudentId)
+  })
+
+  it('closes an open response drawer when the active student changes', async () => {
+    const marinaAssignment = historyAssignment('33333333-aaaa-4333-8333-333333333333', studentId, 'Resposta da Marina')
+    const marinaSubmission = historySubmission('44444444-aaaa-4444-8444-444444444444', marinaAssignment.id, studentId)
+    const biancaAssignment = historyAssignment('55555555-aaaa-4555-8555-555555555555', secondStudentId, 'Pendência da Bianca')
+
+    mocks.listEnrolledStudents.mockResolvedValue([
+      { userId: studentId, displayName: 'Marina Costa', joinedAt: '2026-08-01T12:00:00.000Z' },
+      { userId: secondStudentId, displayName: 'Bianca Souza', joinedAt: '2026-08-02T12:00:00.000Z' },
+    ])
+    mocks.listAnamnesisAssignments.mockImplementation(async (_scope, activeStudentId) => ({
+      items: [activeStudentId === studentId ? marinaAssignment : biancaAssignment],
+      nextCursor: null,
+    }))
+    mocks.listAnamnesisSubmissions.mockImplementation(async (_scope, activeStudentId) => ({
+      items: activeStudentId === studentId ? [marinaSubmission] : [],
+      nextCursor: null,
+    }))
+
+    render(<PrototypeProvider lockedRole="trainer"><LiveTrainerFormsScreen /></PrototypeProvider>)
+    fireEvent.click(await screen.findByRole('button', { name: /Resposta da Marina/i }))
+    expect(screen.getByRole('dialog', { name: /Respostas de Marina Costa/i })).toBeInTheDocument()
+
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: secondStudentId } })
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: /Respostas de Marina Costa/i })).not.toBeInTheDocument())
+    expect(await screen.findByText('Pendência da Bianca')).toBeInTheDocument()
   })
 })

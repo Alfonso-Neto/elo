@@ -497,21 +497,30 @@ export function LiveTrainerFormsScreen() {
   const [phase, setPhase] = useState<LoadPhase>('loading')
   const [error, setError] = useState('')
   const [openSubmission, setOpenSubmission] = useState<AnamnesisSubmission | null>(null)
+  const historyRequestVersion = useRef(0)
 
   const load = useCallback(async () => {
     if (!target.scope || !target.student) return
-    setPhase('loading'); setError('')
+    const requestVersion = ++historyRequestVersion.current
+    const scope = target.scope
+    const student = target.student
+    setPhase('loading'); setError(''); setAssignments([]); setSubmissions([]); setOpenSubmission(null)
     try {
       const [assignmentPage, submissionPage] = await Promise.all([
-        listAnamnesisAssignments(target.scope, target.student.userId, { limit: 30 }),
-        listAnamnesisSubmissions(target.scope, target.student.userId, { limit: 30 }),
+        listAnamnesisAssignments(scope, student.userId, { limit: 30 }),
+        listAnamnesisSubmissions(scope, student.userId, { limit: 30 }),
       ])
+      if (requestVersion !== historyRequestVersion.current) return
       setAssignments(assignmentPage.items); setSubmissions(submissionPage.items); setPhase('ready')
     } catch (cause) {
+      if (requestVersion !== historyRequestVersion.current) return
       setPhase('error'); setError(cause instanceof Error ? cause.message : 'Não foi possível carregar as anamneses.')
     }
   }, [target.scope, target.student])
-  useEffect(() => { void load() }, [load])
+  useEffect(() => {
+    void load()
+    return () => { historyRequestVersion.current += 1 }
+  }, [load])
   const submissionByAssignment = useMemo(() => new Map(submissions.map((item) => [item.assignmentId, item])), [submissions])
   const openTemplate = (id: string) => {
     setFormQuestions((formTemplateQuestions[id] ?? generalForm).map((question) => ({ ...question, options: question.options ? [...question.options] : undefined })))
