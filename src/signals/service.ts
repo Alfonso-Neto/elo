@@ -35,7 +35,7 @@ const bodySideSet = new Set<string>(bodySides)
 const symptomTimingSet = new Set<string>(symptomTimings)
 const knownRedFlagSet = new Set<string>(knownRedFlagCodes)
 const defaultPageSize = 25
-const maximumPageSize = 50
+export const MAX_SIGNAL_PAGE_SIZE = 50
 const maximumPageOffset = 100_000
 
 const painReportSummaryColumns = [
@@ -118,13 +118,13 @@ function parsePageOptions(options: SignalPageOptions = {}) {
   if (
     !Number.isSafeInteger(limit)
     || limit < 1
-    || limit > maximumPageSize
+    || limit > MAX_SIGNAL_PAGE_SIZE
     || !Number.isSafeInteger(offset)
     || offset < 0
     || offset > maximumPageOffset
   ) {
     throw new SignalDomainError('validation', {
-      fieldErrors: { pagination: `Use limite de 1 a ${maximumPageSize} e deslocamento válido.` },
+      fieldErrors: { pagination: `Use limite de 1 a ${MAX_SIGNAL_PAGE_SIZE} e deslocamento válido.` },
     })
   }
   return { limit, offset }

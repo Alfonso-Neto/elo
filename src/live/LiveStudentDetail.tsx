@@ -7,7 +7,7 @@ import { useAuth } from '../auth/auth-context'
 import { BackButton, Button, Drawer, Eyebrow, Modal, PageIntro, Progress, SectionTitle } from '../components'
 import { listEnrolledStudents, type EnrolledStudent } from '../onboarding/enrollment-service'
 import { usePrototype } from '../prototype-context'
-import { createIdempotencyKey, createSignalService, type PainReportSummary } from '../signals'
+import { createIdempotencyKey, createSignalService, MAX_SIGNAL_PAGE_SIZE, type PainReportSummary } from '../signals'
 import {
   createTrainerStudentNote, getLatestWorkoutVersion, listAnamnesisAssignments,
   listAnamnesisSubmissions, listTrainerStudentNotes, listWorkoutCompletions,
@@ -73,7 +73,7 @@ export function LiveStudentDetailScreen() {
     try {
       const [core, nutritionResult] = await Promise.all([
         Promise.all([
-          createSignalService().listWorkspaceReports(scope.workspaceId, { limit: 100 }),
+          createSignalService().listWorkspaceReports(scope.workspaceId, { limit: MAX_SIGNAL_PAGE_SIZE }),
           getLatestWorkoutVersion(scope, student.userId),
           listWorkoutCompletions(scope, student.userId, { limit: 30 }),
           listAnamnesisAssignments(scope, student.userId, { limit: 30 }),

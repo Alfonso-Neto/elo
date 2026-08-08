@@ -8,7 +8,7 @@ import { useAuth } from '../auth/auth-context'
 import { Button, Eyebrow, PageIntro, SectionTitle, SuccessState } from '../components'
 import { listEnrolledStudents, type EnrolledStudent } from '../onboarding/enrollment-service'
 import { usePrototype } from '../prototype-context'
-import { createIdempotencyKey, createSignalService, type PainReportSummary } from '../signals'
+import { createIdempotencyKey, createSignalService, MAX_SIGNAL_PAGE_SIZE, type PainReportSummary } from '../signals'
 import type { Exercise } from '../types'
 import { getLatestWorkoutVersion, type TrainingScope, type WorkoutVersion } from './training'
 import './live.css'
@@ -152,7 +152,7 @@ export function LiveTrainerCopilot() {
     try {
       const [nextStudents, reportPage] = await Promise.all([
         listEnrolledStudents(),
-        createSignalService().listWorkspaceReports(membership.workspaceId, { limit: 100 }),
+        createSignalService().listWorkspaceReports(membership.workspaceId, { limit: MAX_SIGNAL_PAGE_SIZE }),
       ])
       setStudents(nextStudents)
       setReports(reportPage.items)
