@@ -37,10 +37,10 @@ describe('Elo authentication entry', () => {
     expect(screen.getByLabelText(/Nome completo/i)).toBeInTheDocument()
   })
 
-  it('enters demo mode only after an explicit action', () => {
+  it('enters demo mode only after an explicit action', async () => {
     render(<App />)
     fireEvent.click(screen.getByRole('button', { name: /Explorar demonstração/i }))
-    expect(screen.getByRole('heading', { name: /Bom dia, André/i })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: /Bom dia, André/i })).toBeInTheDocument()
     expect(new URLSearchParams(window.location.search).get('demo')).toBe('1')
   })
 })

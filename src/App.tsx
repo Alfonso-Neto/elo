@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState, type ComponentType } from 'react'
+import { lazy, Suspense, useEffect, useMemo, useState, type ComponentType } from 'react'
 import {
-  Bell, CalendarDays, ClipboardList, Dumbbell, FileCheck2, LayoutDashboard, Menu, MessageCircle,
-  LogOut, MoreHorizontal, RotateCcw, Salad, Search, Sparkles, UserRound, Users,
+  Bell, CalendarDays, ClipboardList, Dumbbell, FileCheck2, LayoutDashboard, LoaderCircle, Menu,
+  MessageCircle, LogOut, MoreHorizontal, RotateCcw, Salad, Search, Sparkles, UserRound, Users,
 } from 'lucide-react'
 import { Brand, Button, Drawer, Eyebrow, Modal } from './components'
 import { AuthLoadingScreen, AuthPage } from './auth/AuthPage'
@@ -10,17 +10,25 @@ import { StudentEnrollmentOnboarding } from './onboarding/EnrollmentScreens'
 import { resolveEnrollmentAccess } from './onboarding/enrollment-access'
 import { listEnrolledStudents, type EnrolledStudent } from './onboarding/enrollment-service'
 import { PrototypeProvider, usePrototype } from './prototype-context'
-import {
-  CopilotScreen, FormBuilderScreen, FormsScreen, MessagesScreen, ScheduleScreen, StudentDetailScreen,
-  StudentsScreen, TrainerDashboard, WorkoutBuilderScreen,
-} from './trainer-screens'
-import {
-  NutritionScreen, StudentAssistantScreen, StudentFormScreen, StudentScheduleScreen, StudentTodayScreen,
-  StudentWorkoutScreen,
-} from './student-screens'
 import { students } from './data'
-import { LiveNotificationsButton } from './live/LiveNotifications'
 import type { Page, Role } from './types'
+
+const TrainerDashboard = lazy(() => import('./trainer-screens').then((module) => ({ default: module.TrainerDashboard })))
+const StudentsScreen = lazy(() => import('./trainer-screens').then((module) => ({ default: module.StudentsScreen })))
+const StudentDetailScreen = lazy(() => import('./trainer-screens').then((module) => ({ default: module.StudentDetailScreen })))
+const CopilotScreen = lazy(() => import('./trainer-screens').then((module) => ({ default: module.CopilotScreen })))
+const WorkoutBuilderScreen = lazy(() => import('./trainer-screens').then((module) => ({ default: module.WorkoutBuilderScreen })))
+const FormsScreen = lazy(() => import('./trainer-screens').then((module) => ({ default: module.FormsScreen })))
+const FormBuilderScreen = lazy(() => import('./trainer-screens').then((module) => ({ default: module.FormBuilderScreen })))
+const ScheduleScreen = lazy(() => import('./trainer-screens').then((module) => ({ default: module.ScheduleScreen })))
+const MessagesScreen = lazy(() => import('./trainer-screens').then((module) => ({ default: module.MessagesScreen })))
+const StudentTodayScreen = lazy(() => import('./student-screens').then((module) => ({ default: module.StudentTodayScreen })))
+const StudentWorkoutScreen = lazy(() => import('./student-screens').then((module) => ({ default: module.StudentWorkoutScreen })))
+const StudentAssistantScreen = lazy(() => import('./student-screens').then((module) => ({ default: module.StudentAssistantScreen })))
+const NutritionScreen = lazy(() => import('./student-screens').then((module) => ({ default: module.NutritionScreen })))
+const StudentScheduleScreen = lazy(() => import('./student-screens').then((module) => ({ default: module.StudentScheduleScreen })))
+const StudentFormScreen = lazy(() => import('./student-screens').then((module) => ({ default: module.StudentFormScreen })))
+const LiveNotificationsButton = lazy(() => import('./live/LiveNotifications').then((module) => ({ default: module.LiveNotificationsButton })))
 
 type NavItem = { page: Page | 'more'; label: string; icon: ComponentType<{ size?: number; strokeWidth?: number }> }
 
@@ -98,7 +106,7 @@ function Topbar() {
     })
     return () => { active = false }
   }, [isDemo, role, searchOpen])
-  return <><header className="topbar"><div className="mobile-brand"><Brand /></div><div className="topbar-title"><Eyebrow>{role === 'trainer' ? 'PAINEL DO TREINADOR' : 'EXPERIÊNCIA DA ALUNA'}</Eyebrow><h1>{titleForPage[page]}</h1></div><div className="top-actions"><button className="top-search" onClick={() => setSearchOpen(true)}><Search size={17} /><span>{role === 'trainer' ? 'Buscar aluno...' : 'Buscar no Elo...'}</span><kbd>⌘ K</kbd></button>{isDemo ? <button className="icon-button" onClick={() => setNotificationsOpen(true)} aria-label="Abrir notificações"><Bell size={19} />{hasNotifications && <i />}</button> : <LiveNotificationsButton />}{role === 'trainer' ? <Button onClick={() => { if (isDemo) setSelectedStudentId('marina'); navigate('builder') }}><Dumbbell size={16} /> Nova prescrição</Button> : isDemo ? <RoleSwitch compact /> : null}</div></header>
+  return <><header className="topbar"><div className="mobile-brand"><Brand /></div><div className="topbar-title"><Eyebrow>{role === 'trainer' ? 'PAINEL DO TREINADOR' : 'EXPERIÊNCIA DA ALUNA'}</Eyebrow><h1>{titleForPage[page]}</h1></div><div className="top-actions"><button className="top-search" onClick={() => setSearchOpen(true)}><Search size={17} /><span>{role === 'trainer' ? 'Buscar aluno...' : 'Buscar no Elo...'}</span><kbd>⌘ K</kbd></button>{isDemo ? <button className="icon-button" onClick={() => setNotificationsOpen(true)} aria-label="Abrir notificações"><Bell size={19} />{hasNotifications && <i />}</button> : <Suspense fallback={<button className="icon-button" aria-label="Carregando atualizações" disabled><Bell size={19} /></button>}><LiveNotificationsButton /></Suspense>}{role === 'trainer' ? <Button onClick={() => { if (isDemo) setSelectedStudentId('marina'); navigate('builder') }}><Dumbbell size={16} /> Nova prescrição</Button> : isDemo ? <RoleSwitch compact /> : null}</div></header>
     {searchOpen && <Modal title={role === 'trainer' ? 'Buscar na sua base' : 'Onde você quer chegar?'} eyebrow="BUSCA RÁPIDA" onClose={() => setSearchOpen(false)} size="small"><label className="search-field modal-search"><Search size={17} /><span className="sr-only">{role === 'trainer' ? 'Buscar aluno' : 'Buscar seção no Elo'}</span><input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder={role === 'trainer' ? 'Nome do aluno...' : 'Treino, agenda, conversa...'} /></label>{role === 'trainer' ? <div className="quick-results">{isDemo ? matches.map((student) => <button key={student.id} onClick={() => { setSelectedStudentId(student.id); setSearchOpen(false); navigate('student-detail') }}><span className={`person-avatar ${student.status}`}>{student.initials}</span><span><strong>{student.name}</strong><small>{student.summary}</small></span></button>) : <>{liveSearchState === 'loading' && <p className="mini-empty">Carregando alunos vinculados...</p>}{liveSearchState === 'error' && <p className="mini-empty">A busca não abriu agora.</p>}{liveSearchState === 'ready' && liveMatches.map((student) => <button key={student.userId} onClick={() => { setSelectedStudentId(student.userId); setSearchOpen(false); navigate('student-detail') }}><span className="person-avatar">{student.displayName.split(/\s+/).slice(0,2).map((part) => part[0]).join('').toUpperCase()}</span><span><strong>{student.displayName}</strong><small>Aluno vinculado ao workspace</small></span></button>)}{liveSearchState === 'ready' && !liveMatches.length && <p className="mini-empty">Nenhum aluno vinculado encontrado.</p>}</>}</div> : <div className="quick-results">{studentMatches.map(({ page: target, label, icon: Icon }) => <button key={target} onClick={() => { if (target !== 'more') navigate(target); setSearchOpen(false) }}><span className="quick-icon"><Icon size={17} /></span><span><strong>{label}</strong><small>Abrir seção</small></span></button>)}{!studentMatches.length && <p className="mini-empty">Nenhuma seção encontrada.</p>}</div>}</Modal>}
     {isDemo && notificationsOpen && <Drawer title="O que mudou" eyebrow="NOTIFICAÇÕES" onClose={() => setNotificationsOpen(false)}><div className="notification-list">{role === 'trainer' && openPainCount > 0 && <button onClick={() => { setSelectedStudentId('marina'); navigate('copilot'); setNotificationsOpen(false) }}><span className="signal-avatar danger"><HeartIcon /></span><span><strong>{openPainCount} relatos de Marina</strong><small>Dor no joelho · sinal aberto</small></span></button>}{role === 'student' && workoutSent && <button onClick={() => { navigate('workout'); setNotificationsOpen(false) }}><span className="signal-avatar danger"><HeartIcon /></span><span><strong>André revisou seu contexto</strong><small>O treino foi ajustado com base no seu relato</small></span></button>}{((role === 'trainer' && formSubmitted) || (role === 'student' && !formSubmitted)) && <button onClick={() => { if (role === 'trainer') setSelectedStudentId('marina'); navigate(role === 'trainer' ? 'forms' : 'student-form'); setNotificationsOpen(false) }}><span className="signal-avatar blue"><FileCheck2 size={17} /></span><span><strong>{formSubmitted ? 'Anamnese respondida' : 'Anamnese aguardando resposta'}</strong><small>Contexto inicial · Marina Costa</small></span></button>}{incomingMessage && <button onClick={() => { navigate('messages'); setNotificationsOpen(false) }}><span className="signal-avatar warning"><MessageCircle size={17} /></span><span><strong>Nova mensagem</strong><small>Conversa de acompanhamento</small></span></button>}{!hasNotifications && <p className="mini-empty">Tudo em dia por aqui.</p>}</div></Drawer>}
   </>
@@ -126,6 +134,10 @@ function Toast() {
 
 function CheckIcon() { return <span aria-hidden="true">✓</span> }
 
+function RouteLoading() {
+  return <div className="page route-loading" role="status"><LoaderCircle className="spin" size={24} /><p>Preparando esta área...</p></div>
+}
+
 function AppContent() {
   const { role, page } = usePrototype()
   const screen = useMemo(() => {
@@ -137,7 +149,7 @@ function AppContent() {
     }
     return screens[page] ?? (role === 'trainer' ? <TrainerDashboard /> : <StudentTodayScreen />)
   }, [page, role])
-  return <div className={`app-shell role-${role}`}><Sidebar /><div className="main-shell"><Topbar /><main id="main-content" tabIndex={-1}>{screen}</main></div><BottomNav /><Toast /></div>
+  return <div className={`app-shell role-${role}`}><Sidebar /><div className="main-shell"><Topbar /><main id="main-content" tabIndex={-1}><Suspense fallback={<RouteLoading />}>{screen}</Suspense></main></div><BottomNav /><Toast /></div>
 }
 
 function AppGate() {
