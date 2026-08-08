@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { buildLiveSignalQueue } from './LiveTrainerDashboard'
 import type { EnrolledStudent } from '../onboarding/enrollment-service'
-import type { PainReportSummary } from '../signals'
+import type { PainReportLifecycleSummary } from '../signals'
 
 const student: EnrolledStudent = { userId: '22222222-2222-4222-8222-222222222222', displayName: 'Marina Costa', joinedAt: null }
-const report = (overrides: Partial<PainReportSummary> = {}): PainReportSummary => ({
+const report = (overrides: Partial<PainReportLifecycleSummary> = {}): PainReportLifecycleSummary => ({
   id: '33333333-3333-4333-8333-333333333333',
   sequence: 1,
   workspaceId: '11111111-1111-4111-8111-111111111111',
@@ -17,6 +17,10 @@ const report = (overrides: Partial<PainReportSummary> = {}): PainReportSummary =
   onset: '2026-08-07T14:00:00.000Z',
   redFlags: [],
   createdAt: '2026-08-07T14:01:00.000Z',
+  status: 'open',
+  acknowledgedAt: null,
+  resolvedAt: null,
+  resolutionNote: null,
   ...overrides,
 })
 
