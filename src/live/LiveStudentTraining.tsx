@@ -15,6 +15,8 @@ import {
   type AnamnesisSubmission, type TrainingScope, type WorkoutVersion,
 } from './training'
 import { validateAnswers } from './training/validation'
+import { createNutritionService, type NutritionDashboard } from './nutrition'
+import { createOperationsService, type ScheduleSession, type ScheduleSlot } from './operations'
 import './live-training.css'
 
 type DraftAnswers = Record<string, string | string[]>
@@ -55,6 +57,11 @@ export function LiveStudentTodayScreen() {
   const [assignment, setAssignment] = useState<AnamnesisAssignment | null>(null)
   const [submission, setSubmission] = useState<AnamnesisSubmission | null>(null)
   const [reports, setReports] = useState<PainReportSummary[]>([])
+  const [nutrition, setNutrition] = useState<NutritionDashboard | null>(null)
+  const [nutritionUnavailable, setNutritionUnavailable] = useState(false)
+  const [sessions, setSessions] = useState<ScheduleSession[]>([])
+  const [slots, setSlots] = useState<ScheduleSlot[]>([])
+  const [scheduleUnavailable, setScheduleUnavailable] = useState(false)
   const [phase, setPhase] = useState<LoadPhase>('loading')
   const [error, setError] = useState('')
 
@@ -62,16 +69,33 @@ export function LiveStudentTodayScreen() {
     if (!scope) return
     setPhase('loading'); setError('')
     try {
-      const [nextWorkout, nextAssignment, submissionPage, reportPage] = await Promise.all([
-        getLatestWorkoutVersion(scope),
-        getLatestAnamnesisAssignment(scope),
-        listAnamnesisSubmissions(scope, undefined, { limit: 50 }),
-        createSignalService().listOwnReports({ limit: 20 }),
+      const operations = createOperationsService()
+      const [core, nutritionResult, scheduleResult] = await Promise.all([
+        Promise.all([
+          getLatestWorkoutVersion(scope),
+          getLatestAnamnesisAssignment(scope),
+          listAnamnesisSubmissions(scope, undefined, { limit: 50 }),
+          createSignalService().listOwnReports({ limit: 20 }),
+        ]),
+        createNutritionService().loadDashboard()
+          .then((value) => ({ value, unavailable: false }))
+          .catch(() => ({ value: null, unavailable: true })),
+        Promise.all([
+          operations.listScheduleSessions({ limit: 50 }),
+          operations.listScheduleSlots({ limit: 50 }),
+        ]).then(([sessionPage, slotPage]) => ({ sessions: sessionPage.items, slots: slotPage.items, unavailable: false }))
+          .catch(() => ({ sessions: [], slots: [], unavailable: true })),
       ])
+      const [nextWorkout, nextAssignment, submissionPage, reportPage] = core
       setWorkout(nextWorkout)
       setAssignment(nextAssignment)
       setSubmission(nextAssignment ? submissionPage.items.find((item) => item.assignmentId === nextAssignment.id) ?? null : null)
       setReports(reportPage.items)
+      setNutrition(nutritionResult.value)
+      setNutritionUnavailable(nutritionResult.unavailable)
+      setSessions(scheduleResult.sessions)
+      setSlots(scheduleResult.slots)
+      setScheduleUnavailable(scheduleResult.unavailable)
       setPhase('ready')
     } catch (cause) {
       setPhase('error'); setError(cause instanceof Error ? cause.message : 'Não foi possível carregar seu resumo.')
@@ -86,11 +110,36 @@ export function LiveStudentTodayScreen() {
   const trainerFirstName = auth.membership?.trainerName.split(/\s+/)[0] ?? 'seu professor'
   const date = new Intl.DateTimeFormat('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' }).format(new Date()).toUpperCase()
   const formDone = Boolean(assignment && submission)
+  const nextSchedule = sessions
+    .filter((session) => session.state === 'confirmed' || session.state === 'requested')
+    .map((session) => ({ session, slot: slots.find((slot) => slot.id === session.slotId) }))
+    .filter((item): item is { session: ScheduleSession; slot: ScheduleSlot } => Boolean(item.slot && item.slot.state !== 'cancelled' && Date.parse(item.slot.startAt) >= Date.now()))
+    .sort((a, b) => Date.parse(a.slot.startAt) - Date.parse(b.slot.startAt))[0]
+  const nextScheduleTitle = scheduleUnavailable
+    ? 'Agenda indisponível agora'
+    : nextSchedule
+      ? nextSchedule.session.state === 'confirmed'
+        ? new Intl.DateTimeFormat('pt-BR', { weekday: 'short', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }).format(new Date(nextSchedule.slot.startAt)).replace('.', '')
+        : 'Aguardando confirmação'
+      : 'Escolha um horário'
+  const nextScheduleCopy = scheduleUnavailable
+    ? 'Abra a agenda para tentar novamente.'
+    : nextSchedule?.slot.place ?? 'Veja os horários publicados pelo professor.'
+  const nutritionTitle = nutritionUnavailable
+    ? 'Nutrição indisponível agora'
+    : nutrition?.plan?.title ?? 'Nutrição profissional'
+  const nutritionCopy = nutritionUnavailable
+    ? 'Abra a área para tentar novamente.'
+    : nutrition?.plan
+      ? `${nutrition.plan.meals.length} refeições · ${nutrition.plan.nutritionistName}${nutrition.consent === 'withdrawn' ? ' · compartilhamento pausado' : ''}`
+      : nutrition?.consent === 'granted'
+        ? 'Aguardando plano de nutricionista parceiro'
+        : 'Autorize para conectar um plano profissional'
   return <div className="page student-home live-training-screen enter"><section className="student-welcome"><Eyebrow accent>{date}</Eyebrow><h2>Oi, {firstName}.</h2><p>{reports.length ? `Seu último relato já está no contexto de ${trainerFirstName}.` : workout ? 'Seu treino está pronto. Vá no seu ritmo e compartilhe qualquer sinal importante.' : `Seu espaço com ${trainerFirstName} está ativo e protegido.`}</p></section>
     <section className="today-grid"><button className="today-workout" onClick={() => navigate('workout')}><div className="workout-orbit"><strong>{workout ? `V${workout.versionNumber}` : '—'}</strong><small>{workout ? 'PUBLICADA' : 'AGUARDANDO'}</small><i style={{ '--progress': workout ? '360deg' : '0deg' } as React.CSSProperties} /></div><div><Eyebrow>{workout ? 'SEU TREINO ATUAL' : 'PRIMEIRA PRESCRIÇÃO'}</Eyebrow><h3>{workout?.title ?? 'Seu professor ainda está preparando o treino'}</h3><p>{workout ? `${workout.exercises.length} exercícios · versão imutável` : 'Você será avisado quando a primeira versão for publicada.'}</p><span>{workout ? 'Abrir treino' : 'Ver status'} <ChevronRight size={16} /></span></div><span className="today-number">01</span></button>
-      <div className="today-side"><button onClick={() => navigate('assistant')}><span className="today-icon danger"><HeartPulse size={20} /></span><div><Eyebrow>COMO VOCÊ ESTÁ?</Eyebrow><h3>Algo doeu ou atrapalhou?</h3><p>{reports.length ? `${reports.length} sinais registrados por você.` : 'Conte em menos de um minuto.'}</p></div><ChevronRight size={18} /></button><button onClick={() => navigate('schedule')}><span className="today-icon blue"><CalendarDays size={20} /></span><div><Eyebrow>AGENDA COMPARTILHADA</Eyebrow><h3>Veja sessões e horários</h3><p>Solicitações dependem da confirmação do professor.</p></div><ChevronRight size={18} /></button></div>
+      <div className="today-side"><button onClick={() => navigate('assistant')}><span className="today-icon danger"><HeartPulse size={20} /></span><div><Eyebrow>COMO VOCÊ ESTÁ?</Eyebrow><h3>Algo doeu ou atrapalhou?</h3><p>{reports.length ? `${reports.length} sinais registrados por você.` : 'Conte em menos de um minuto.'}</p></div><ChevronRight size={18} /></button><button onClick={() => navigate('schedule')}><span className="today-icon blue"><CalendarDays size={20} /></span><div><Eyebrow>{nextSchedule?.session.state === 'confirmed' ? 'PRÓXIMA SESSÃO' : 'AGENDA COMPARTILHADA'}</Eyebrow><h3>{nextScheduleTitle}</h3><p>{nextScheduleCopy}</p></div><ChevronRight size={18} /></button></div>
     </section>
-    <section className="student-lower"><div><SectionTitleCompat index="02" title="Para você agora" /><div className="student-task-list"><button onClick={() => navigate('student-form')}><span className={formDone ? 'task-check done' : 'task-check'}>{formDone ? <Check size={16} /> : <FileCheck2 size={16} />}</span><span><strong>{assignment?.title ?? 'Nenhuma anamnese pendente'}</strong><small>{formDone ? 'Respostas registradas com consentimento' : assignment ? `${trainerFirstName} enviou perguntas para você` : 'Seu histórico está em dia'}</small></span><span className={`tag ${formDone || !assignment ? 'success' : 'warning'}`}>{formDone ? 'Concluída' : assignment ? 'Pendente' : 'Em dia'}</span></button><button onClick={() => navigate('nutrition')}><span className="task-check"><Salad size={16} /></span><span><strong>Nutrição profissional</strong><small>Nenhum plano de nutricionista conectado ainda</small></span><ChevronRight size={16} /></button><button onClick={() => navigate('messages')}><span className="task-check"><MessageCircle size={16} /></span><span><strong>Conversa com {trainerFirstName}</strong><small>Canal privado do seu acompanhamento</small></span><ChevronRight size={16} /></button></div></div>
+    <section className="student-lower"><div><SectionTitleCompat index="02" title="Para você agora" /><div className="student-task-list"><button onClick={() => navigate('student-form')}><span className={formDone ? 'task-check done' : 'task-check'}>{formDone ? <Check size={16} /> : <FileCheck2 size={16} />}</span><span><strong>{assignment?.title ?? 'Nenhuma anamnese pendente'}</strong><small>{formDone ? 'Respostas registradas com consentimento' : assignment ? `${trainerFirstName} enviou perguntas para você` : 'Seu histórico está em dia'}</small></span><span className={`tag ${formDone || !assignment ? 'success' : 'warning'}`}>{formDone ? 'Concluída' : assignment ? 'Pendente' : 'Em dia'}</span></button><button onClick={() => navigate('nutrition')}><span className={nutrition?.plan && !nutritionUnavailable ? 'task-check done' : 'task-check'}>{nutrition?.plan && !nutritionUnavailable ? <Check size={16} /> : <Salad size={16} />}</span><span><strong>{nutritionTitle}</strong><small>{nutritionCopy}</small></span><ChevronRight size={16} /></button><button onClick={() => navigate('messages')}><span className="task-check"><MessageCircle size={16} /></span><span><strong>Conversa com {trainerFirstName}</strong><small>Canal privado do seu acompanhamento</small></span><ChevronRight size={16} /></button></div></div>
       <aside className="continuity-card"><Eyebrow>SEU ELO REAL</Eyebrow><strong>{reports.length}</strong><span>{reports.length === 1 ? 'sinal compartilhado' : 'sinais compartilhados'}</span><p>Consistência também é registrar contexto e adaptar quando o corpo pede.</p><Button variant="secondary" onClick={() => void load()}>Atualizar resumo</Button></aside>
     </section>
   </div>

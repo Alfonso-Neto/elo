@@ -16,6 +16,7 @@ import { mapPainIntakeSelection, submitConsentedPainIntake, type PendingPainInta
 import { LiveStudentFormScreen, LiveStudentTodayScreen, LiveStudentWorkoutScreen } from './live/LiveStudentTraining'
 import { getLatestWorkoutVersion } from './live/training'
 import { LiveStudentAbsenceFlow, LiveStudentScheduleScreen } from './live/LiveOperationsScreens'
+import { LiveNutritionScreen } from './live/LiveNutritionScreen'
 import './assistant.css'
 
 export function StudentTodayScreen() {
@@ -228,6 +229,11 @@ function FlowQuestion({ title, copy, children }: { title: string; copy: string; 
 }
 
 export function NutritionScreen() {
+  const { isDemo } = useAuth()
+  return isDemo ? <DemoNutritionScreen /> : <LiveNutritionScreen />
+}
+
+function DemoNutritionScreen() {
   const { navigate, completedMeals, toggleMeal, water, setWater, notify } = usePrototype()
   const totals = meals.reduce((sum, meal) => ({ protein: sum.protein + meal.protein, carbs: sum.carbs + meal.carbs, fat: sum.fat + meal.fat }), { protein: 0, carbs: 0, fat: 0 })
   return <div className="page nutrition-page enter"><PageIntro eyebrow="PLANO DE HOJE · LEITURA" title={<>Nutrição que acompanha<br />o seu treino.</>} copy="Plano elaborado pela Nutri. Camila Reis, parceira responsável pelo acompanhamento nutricional." action={<div className="nutrition-author"><span>CR</span><div><strong>Camila Reis</strong><small>Nutricionista · CRN 00000</small></div></div>} />
