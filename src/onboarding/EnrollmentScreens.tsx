@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { ArrowRight, Check, Clipboard, Clock3, Link2, LoaderCircle, LogOut, Mail, RefreshCw, ShieldCheck, UserPlus, Users } from 'lucide-react'
 import { Brand, Button, Eyebrow, Modal, PageIntro } from '../components'
 import { useAuth } from '../auth/auth-context'
@@ -19,6 +19,9 @@ export function StudentEnrollmentOnboarding() {
   const [phase, setPhase] = useState<AsyncPhase>('idle')
   const [message, setMessage] = useState<string | null>(null)
   const [accepted, setAccepted] = useState<AcceptedInvitation | null>(null)
+  const codeInputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => { document.title = 'Vincular professor · Elo' }, [])
 
   const submit = async (event: FormEvent) => {
     event.preventDefault()
@@ -31,9 +34,12 @@ export function StudentEnrollmentOnboarding() {
       setAccepted(result)
       setPhase('success')
     } catch (error) {
-      setCode('')
       setPhase('error')
       setMessage(error instanceof Error ? error.message : 'Não foi possível validar este convite.')
+      window.requestAnimationFrame(() => {
+        codeInputRef.current?.focus()
+        codeInputRef.current?.select()
+      })
     }
   }
 
@@ -63,7 +69,7 @@ export function StudentEnrollmentOnboarding() {
         <li><span>03</span><div><strong>Entrar no espaço</strong><small>Treinos e conversas privadas</small></div></li>
       </ol>
     </aside>
-    <main className="enrollment-main">
+    <main id="main-content" className="enrollment-main" tabIndex={-1}>
       <div className="enrollment-mobile-head"><Brand /><span>ENTRADA DO ALUNO</span></div>
       <button className="enrollment-signout" type="button" onClick={() => void signOut()}><LogOut size={15} /> Sair</button>
       <section className="enrollment-panel" aria-live="polite">
@@ -82,13 +88,13 @@ export function StudentEnrollmentOnboarding() {
             <h2>Conecte-se ao seu professor.</h2>
             <p>Peça ao professor um código de homologação criado para o mesmo email usado nesta conta.</p>
           </div>
-          <form className="enrollment-form" onSubmit={(event) => void submit(event)} noValidate>
-            <label>
-              <span>Código de convite</span>
-              <div className="enrollment-code-input"><Link2 size={18} /><input autoComplete="off" autoCapitalize="characters" spellCheck={false} value={code} onChange={(event) => { setCode(event.target.value); if (phase === 'error') { setPhase('idle'); setMessage(null) } }} placeholder="ELO-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX" aria-describedby="invite-code-help" /></div>
+          <form className="enrollment-form" onSubmit={(event) => void submit(event)} noValidate aria-busy={phase === 'loading'}>
+            <div className="enrollment-code-field">
+              <label htmlFor="invite-code">Código de convite</label>
+              <div className={phase === 'error' ? 'enrollment-code-input has-error' : 'enrollment-code-input'}><Link2 size={18} aria-hidden="true" /><input ref={codeInputRef} id="invite-code" autoComplete="off" autoCapitalize="characters" spellCheck={false} value={code} onChange={(event) => { setCode(event.target.value); if (phase === 'error') { setPhase('idle'); setMessage(null) } }} placeholder="ELO-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX" aria-invalid={phase === 'error'} aria-describedby={phase === 'error' ? 'invite-code-help invite-code-error' : 'invite-code-help'} /></div>
               <small id="invite-code-help">O código vale por 72 horas e só pode ser usado uma vez.</small>
-            </label>
-            {message && <p className="enrollment-alert" role="alert">{message}</p>}
+            </div>
+            {message && <p id="invite-code-error" className="enrollment-alert" role="alert">{message}</p>}
             <Button className="wide" type="submit" disabled={phase === 'loading' || !code.trim()}>
               {phase === 'loading' ? <><LoaderCircle className="spin" size={17} /> Validando convite...</> : <>Conectar ao professor <ArrowRight size={16} /></>}
             </Button>
@@ -115,6 +121,7 @@ export function TrainerStudentsEnrollment() {
   const [inviteError, setInviteError] = useState<string | null>(null)
   const [invitation, setInvitation] = useState<CreatedInvitation | null>(null)
   const [copied, setCopied] = useState(false)
+  const emailInputRef = useRef<HTMLInputElement>(null)
 
   const loadStudents = useCallback(async () => {
     setListPhase('loading')
@@ -152,6 +159,10 @@ export function TrainerStudentsEnrollment() {
     } catch (error) {
       setInvitePhase('error')
       setInviteError(error instanceof Error ? error.message : 'Não foi possível gerar o convite agora.')
+      window.requestAnimationFrame(() => {
+        emailInputRef.current?.focus()
+        emailInputRef.current?.select()
+      })
     }
   }
 
@@ -195,10 +206,10 @@ export function TrainerStudentsEnrollment() {
         <p className="invitation-homologation-note"><Mail size={16} /><span><strong>Envio manual nesta homologação.</strong> O Elo ainda não enviou email; copie o código e compartilhe por um canal seguro.</span></p>
         {inviteError && <p className="enrollment-alert" role="alert">{inviteError}</p>}
         <Button className="wide" variant="secondary" onClick={closeInvite}>Concluir</Button>
-      </div> : <form className="form-stack invitation-form" onSubmit={(event) => void createInvite(event)} noValidate>
+      </div> : <form className="form-stack invitation-form" onSubmit={(event) => void createInvite(event)} noValidate aria-busy={invitePhase === 'loading'}>
         <p className="modal-lead">Use exatamente o email que o aluno cadastrou. O código não permite trocar de conta ou escolher outro espaço.</p>
-        <label><span>Email do aluno</span><input autoFocus type="email" autoComplete="email" value={email} onChange={(event) => { setEmail(event.target.value); if (invitePhase === 'error') { setInvitePhase('idle'); setInviteError(null) } }} placeholder="aluno@exemplo.com" /></label>
-        {inviteError && <p className="enrollment-alert" role="alert">{inviteError}</p>}
+        <label><span>Email do aluno</span><input ref={emailInputRef} id="invitation-email" autoFocus type="email" autoComplete="email" value={email} onChange={(event) => { setEmail(event.target.value); if (invitePhase === 'error') { setInvitePhase('idle'); setInviteError(null) } }} placeholder="aluno@exemplo.com" aria-invalid={invitePhase === 'error'} aria-describedby={invitePhase === 'error' ? 'invitation-email-error' : undefined} /></label>
+        {inviteError && <p id="invitation-email-error" className="enrollment-alert" role="alert">{inviteError}</p>}
         <Button className="wide" type="submit" disabled={invitePhase === 'loading' || !email.trim()}>
           {invitePhase === 'loading' ? <><LoaderCircle className="spin" size={17} /> Gerando código...</> : <>Gerar código de homologação <ArrowRight size={16} /></>}
         </Button>

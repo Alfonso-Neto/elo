@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { App } from '../App'
+import { AuthLoadingScreen } from '../auth/AuthPage'
 import { PrototypeProvider, usePrototype } from '../prototype-context'
 
 beforeEach(() => {
@@ -9,6 +10,12 @@ beforeEach(() => {
 })
 
 describe('Elo authentication entry', () => {
+  it('keeps the loading boundary reachable from the global skip link', () => {
+    render(<AuthLoadingScreen />)
+    expect(document.getElementById('main-content')).toHaveClass('auth-loading')
+    expect(document.title).toBe('Validando acesso · Elo')
+  })
+
   it('fails closed on the login page when remote auth is not configured', () => {
     render(<App />)
     expect(screen.getByRole('heading', { name: /Entre no seu Elo/i })).toBeInTheDocument()

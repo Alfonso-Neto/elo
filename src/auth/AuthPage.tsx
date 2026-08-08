@@ -335,5 +335,6 @@ export function AuthPage() {
 }
 
 export function AuthLoadingScreen() {
-  return <div className="auth-loading" role="status" aria-live="polite"><Brand /><span className="auth-loading-line" /><p>Validando seu acesso…</p></div>
+  useEffect(() => { document.title = 'Validando acesso · Elo' }, [])
+  return <main id="main-content" className="auth-loading" tabIndex={-1} aria-live="polite"><Brand /><span className="auth-loading-line" /><p>Validando seu acesso…</p></main>
 }
