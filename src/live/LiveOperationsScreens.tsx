@@ -330,7 +330,7 @@ export function LiveStudentScheduleScreen() {
 
 export function LiveMessagesScreen() {
   const { profile, membership } = useAuth()
-  const { selectedStudentId, setSelectedStudentId, notify } = usePrototype()
+  const { messageSessionDrafts, selectedStudentId, setMessageSessionDrafts, setSelectedStudentId, notify } = usePrototype()
   const isTrainer = profile?.accountRole === 'trainer'
   const [students, setStudents] = useState<EnrolledStudent[]>([])
   const [activeId, setActiveId] = useState(isTrainer ? '' : profile?.id ?? '')
@@ -339,13 +339,17 @@ export function LiveMessagesScreen() {
   const [error, setError] = useState('')
   const [messages, setMessages] = useState<ThreadMessage[]>([])
   const [nextOffset, setNextOffset] = useState<number | null>(null)
-  const [draft, setDraft] = useState('')
   const [search, setSearch] = useState('')
   const [sending, setSending] = useState(false)
+  const [loadingOlder, setLoadingOlder] = useState(false)
+  const [threadError, setThreadError] = useState('')
   const [sendError, setSendError] = useState('')
-  const sendKey = useRef('')
   const selectedStudentRef = useRef(selectedStudentId)
   const rosterRequest = useRef(0)
+  const threadRequestVersion = useRef(0)
+  const threadSubjectVersion = useRef(0)
+  const olderRequestVersion = useRef(0)
+  const sendRequestVersion = useRef(0)
 
   useEffect(() => { selectedStudentRef.current = selectedStudentId }, [selectedStudentId])
 
@@ -377,27 +381,48 @@ export function LiveMessagesScreen() {
   }, [loadRoster])
 
   const loadThread = useCallback(async (quiet = false) => {
+    const requestVersion = ++threadRequestVersion.current
     if (isTrainer && !rosterReady) return
     if (isTrainer && !activeId) {
       setMessages([]); setNextOffset(null); setPhase('ready'); return
     }
-    if (!quiet) setPhase('loading')
-    setError('')
+    if (!quiet) {
+      olderRequestVersion.current += 1
+      setLoadingOlder(false)
+      setPhase('loading')
+      setError('')
+    }
     try {
       const page = await createOperationsService().listThreadMessages({
         studentUserId: isTrainer ? activeId : undefined,
         limit: 50,
       })
+      if (requestVersion !== threadRequestVersion.current) return
       setMessages((current) => quiet ? mergeMessages(current, page.items) : page.items)
-      setNextOffset(page.nextOffset)
+      setNextOffset((current) => {
+        if (!quiet) return page.nextOffset
+        if (current === null) return page.nextOffset
+        if (page.nextOffset === null) return current
+        return Math.max(current, page.nextOffset)
+      })
+      setThreadError('')
       setPhase('ready')
     } catch (cause) {
-      setError(errorMessage(cause, 'Não foi possível abrir esta conversa.'))
+      if (requestVersion !== threadRequestVersion.current) return
+      const message = errorMessage(cause, 'Não foi possível abrir esta conversa.')
+      if (quiet) {
+        setThreadError(message)
+        return
+      }
+      setError(message)
       setPhase('error')
     }
   }, [activeId, isTrainer, rosterReady])
 
-  useEffect(() => { void loadThread() }, [loadThread])
+  useEffect(() => {
+    void loadThread()
+    return () => { threadRequestVersion.current += 1 }
+  }, [loadThread])
   useEffect(() => {
     if (phase !== 'ready') return
     const timer = window.setInterval(() => {
@@ -405,45 +430,93 @@ export function LiveMessagesScreen() {
     }, 15_000)
     return () => window.clearInterval(timer)
   }, [loadThread, phase])
+  useEffect(() => () => {
+    threadSubjectVersion.current += 1
+    olderRequestVersion.current += 1
+    sendRequestVersion.current += 1
+  }, [])
 
   const selectConversation = (id: string) => {
-    setActiveId(id); setSelectedStudentId(id); setMessages([]); setNextOffset(null); setSendError(''); sendKey.current = ''
+    if (sending || id === activeId) return
+    threadRequestVersion.current += 1
+    threadSubjectVersion.current += 1
+    olderRequestVersion.current += 1
+    sendRequestVersion.current += 1
+    setActiveId(id); setSelectedStudentId(id); setMessages([]); setNextOffset(null); setLoadingOlder(false); setThreadError(''); setSendError('')
   }
   const activeStudent = students.find((student) => student.userId === activeId) ?? null
   const conversations = students.filter((student) => student.displayName.toLowerCase().includes(search.trim().toLowerCase()))
   const shownMessages = [...messages].reverse()
+  const draftOwnerId = isTrainer ? activeId : profile?.id ?? ''
+  const draftEntry = messageSessionDrafts[draftOwnerId]
+  const draft = draftEntry?.body ?? ''
 
   const loadOlder = async () => {
-    if (nextOffset === null) return
+    if (nextOffset === null || loadingOlder) return
+    const subjectVersion = threadSubjectVersion.current
+    const olderVersion = ++olderRequestVersion.current
+    const studentUserId = isTrainer ? activeId : undefined
+    const offset = nextOffset
+    setLoadingOlder(true)
+    setThreadError('')
     try {
       const page = await createOperationsService().listThreadMessages({
-        studentUserId: isTrainer ? activeId : undefined,
+        studentUserId,
         limit: 50,
-        offset: nextOffset,
+        offset,
       })
+      if (subjectVersion !== threadSubjectVersion.current || olderVersion !== olderRequestVersion.current) return
       setMessages((current) => mergeMessages(current, page.items))
       setNextOffset(page.nextOffset)
     } catch (cause) {
-      setSendError(errorMessage(cause, 'Não foi possível carregar as mensagens anteriores.'))
+      if (subjectVersion !== threadSubjectVersion.current || olderVersion !== olderRequestVersion.current) return
+      setThreadError(errorMessage(cause, 'Não foi possível carregar as mensagens anteriores.'))
+    } finally {
+      if (subjectVersion === threadSubjectVersion.current && olderVersion === olderRequestVersion.current) setLoadingOlder(false)
     }
   }
 
   const send = async () => {
     const body = draft.trim().replace(/\s+/g, ' ')
-    if (!body || sending || (isTrainer && !activeId)) return
+    if (!body || !draftOwnerId || sending || (isTrainer && !activeId)) return
+    const requestVersion = ++sendRequestVersion.current
+    const studentUserId = activeId
+    const draftSnapshot = draft
+    const recipientName = isTrainer ? activeStudent?.displayName ?? 'aluno vinculado' : membership?.trainerName ?? 'seu professor'
+    const idempotencyKey = draftEntry?.idempotencyKey || createIdempotencyKey('thread-message')
+    setMessageSessionDrafts((current) => {
+      const currentDraft = current[draftOwnerId]
+      if (!currentDraft || currentDraft.body !== draftSnapshot) return current
+      return { ...current, [draftOwnerId]: { body: currentDraft.body, idempotencyKey } }
+    })
     setSending(true); setSendError('')
     try {
-      const idempotencyKey = sendKey.current || createIdempotencyKey('thread-message')
-      sendKey.current = idempotencyKey
       const service = createOperationsService()
       const created = isTrainer
-        ? await service.sendTrainerThreadMessage({ studentUserId: activeId, body, idempotencyKey })
+        ? await service.sendTrainerThreadMessage({ studentUserId, body, idempotencyKey })
         : await service.sendStudentThreadMessage({ body, idempotencyKey })
+      setMessageSessionDrafts((current) => {
+        const currentDraft = current[draftOwnerId]
+        if (!currentDraft || currentDraft.body !== draftSnapshot || currentDraft.idempotencyKey !== idempotencyKey) return current
+        const next = { ...current }
+        delete next[draftOwnerId]
+        return next
+      })
+      if (requestVersion !== sendRequestVersion.current) {
+        notify('Mensagem enviada', `A mensagem para ${recipientName} foi confirmada; qualquer rascunho mais novo foi preservado.`)
+        return
+      }
       setMessages((current) => mergeMessages(current, [created]))
-      setDraft(''); sendKey.current = ''
     } catch (cause) {
-      setSendError(errorMessage(cause, 'Não foi possível enviar esta mensagem.'))
-    } finally { setSending(false) }
+      const message = errorMessage(cause, 'Não foi possível enviar esta mensagem.')
+      if (requestVersion !== sendRequestVersion.current) {
+        notify('Mensagem não enviada', `${recipientName}: ${message}`)
+        return
+      }
+      setSendError(message)
+    } finally {
+      if (requestVersion === sendRequestVersion.current) setSending(false)
+    }
   }
 
   if (phase === 'loading') return <OperationsLoading copy="Abrindo o canal profissional..." />
@@ -451,10 +524,38 @@ export function LiveMessagesScreen() {
   if (isTrainer && students.length === 0) return <div className="page centered-page enter"><div className="empty-state"><MessageCircle size={28} /><h3>Nenhuma conversa ainda.</h3><p>Convide um aluno para abrir um canal profissional privado.</p></div></div>
 
   const counterpartName = isTrainer ? activeStudent?.displayName ?? 'Aluno vinculado' : membership?.trainerName ?? 'Seu professor'
-  return <div className="page message-page enter live-operations-page"><PageIntro eyebrow="CONVERSAS · CANAL PROFISSIONAL" title="O contexto fica junto." copy={isTrainer ? 'Mensagens reais ligadas ao vínculo de cada aluno.' : `Sua conversa privada com ${counterpartName}, dentro do acompanhamento.`} action={<button className="text-link" onClick={() => void loadThread()}><RefreshCw size={15} /> Atualizar</button>} />
-    <section className={`messenger ${isTrainer ? '' : 'student-thread-only'}`}>{isTrainer && <aside className="conversation-list"><label className="search-field"><Search size={16} /><span className="sr-only">Buscar conversa</span><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar conversa" /></label>{conversations.map((student) => <button className={student.userId === activeId ? 'active' : ''} key={student.userId} onClick={() => selectConversation(student.userId)}><span className="person-avatar">{initials(student.displayName)}</span><span><strong>{student.displayName}</strong><small>{student.userId === activeId ? messages[0]?.body ?? 'Canal aberto' : 'Abrir conversa'}</small></span></button>)}</aside>}
-      {isTrainer && <label className="mobile-conversation-picker"><span>Conversa</span><select value={activeId} onChange={(event) => selectConversation(event.target.value)}>{students.map((student) => <option value={student.userId} key={student.userId}>{student.displayName}</option>)}</select></label>}
-      <div className="thread"><header><span className="person-avatar">{initials(counterpartName)}</span><div><strong>{counterpartName}</strong><small><i /> vínculo ativo e privado</small></div><button aria-label="Informações da conversa" onClick={() => notify('Canal profissional', 'As mensagens ficam vinculadas ao workspace e só podem ser lidas pelas pessoas autorizadas.')}><MoreHorizontal /></button></header><div className="message-history" aria-live="polite">{nextOffset !== null && <button className="load-older" onClick={() => void loadOlder()}>Carregar anteriores</button>}{shownMessages.map((message) => <div className={message.senderUserId === profile?.id ? 'message mine' : 'message'} key={message.id}><p>{message.body}</p><time>{dateTimeLabel(message.createdAt)}</time></div>)}{!shownMessages.length && <div className="thread-empty"><MessageCircle size={24} /><strong>O canal está aberto.</strong><small>Envie a primeira mensagem necessária para o acompanhamento.</small></div>}</div>{sendError && <p className="operations-error thread-error" role="alert">{sendError}</p>}<form className="message-composer" onSubmit={(event) => { event.preventDefault(); void send() }}><label><span className="sr-only">Mensagem</span><textarea maxLength={1000} value={draft} onChange={(event) => { sendKey.current = ''; setSendError(''); setDraft(event.target.value.replace(/[\r\n]+/g, ' ')) }} placeholder={`Escreva para ${counterpartName.split(/\s+/)[0]}...`} rows={1} /></label><button type="submit" disabled={!draft.trim() || sending} aria-label="Enviar mensagem">{sending ? <LoaderCircle className="spin" size={18} /> : <Send size={18} />}</button></form></div>
+  return <div className="page message-page enter live-operations-page">
+    <PageIntro eyebrow="CONVERSAS · CANAL PROFISSIONAL" title="O contexto fica junto." copy={isTrainer ? 'Mensagens reais ligadas ao vínculo de cada aluno.' : `Sua conversa privada com ${counterpartName}, dentro do acompanhamento.`} action={<button className="text-link" disabled={sending} onClick={() => void loadThread()}><RefreshCw size={15} /> Atualizar</button>} />
+    <section className={`messenger ${isTrainer ? '' : 'student-thread-only'}`}>
+      {isTrainer && <aside className="conversation-list">
+        <label className="search-field"><Search size={16} /><span className="sr-only">Buscar conversa</span><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar conversa" /></label>
+        {conversations.map((student) => <button disabled={sending} className={student.userId === activeId ? 'active' : ''} key={student.userId} onClick={() => selectConversation(student.userId)}><span className="person-avatar">{initials(student.displayName)}</span><span><strong>{student.displayName}</strong><small>{student.userId === activeId ? messages[0]?.body ?? 'Canal aberto' : 'Abrir conversa'}</small></span></button>)}
+      </aside>}
+      {isTrainer && <label className="mobile-conversation-picker"><span>Conversa</span><select value={activeId} disabled={sending} onChange={(event) => selectConversation(event.target.value)}>{students.map((student) => <option value={student.userId} key={student.userId}>{student.displayName}</option>)}</select></label>}
+      <div className="thread">
+        <header><span className="person-avatar">{initials(counterpartName)}</span><div><strong>{counterpartName}</strong><small><i /> vínculo ativo e privado</small></div><button aria-label="Informações da conversa" onClick={() => notify('Canal profissional', 'As mensagens ficam vinculadas ao workspace e só podem ser lidas pelas pessoas autorizadas.')}><MoreHorizontal /></button></header>
+        <div className="message-history" aria-live="polite">
+          {nextOffset !== null && <button className="load-older" disabled={loadingOlder} onClick={() => void loadOlder()}>{loadingOlder ? <><LoaderCircle className="spin" size={14} /> Carregando...</> : 'Carregar anteriores'}</button>}
+          {shownMessages.map((message) => <div className={message.senderUserId === profile?.id ? 'message mine' : 'message'} key={message.id}><p>{message.body}</p><time>{dateTimeLabel(message.createdAt)}</time></div>)}
+          {!shownMessages.length && <div className="thread-empty"><MessageCircle size={24} /><strong>O canal está aberto.</strong><small>Envie a primeira mensagem necessária para o acompanhamento.</small></div>}
+        </div>
+        {threadError && <p className="operations-error thread-error" role="alert">{threadError}</p>}
+        {sendError && <p className="operations-error thread-error" role="alert">{sendError}</p>}
+        <form className="message-composer" onSubmit={(event) => { event.preventDefault(); void send() }}>
+          <label><span className="sr-only">Mensagem</span><textarea maxLength={1000} value={draft} disabled={sending} onChange={(event) => {
+            if (sending || !draftOwnerId) return
+            const body = event.target.value.replace(/[\r\n]+/g, ' ')
+            setSendError('')
+            setMessageSessionDrafts((current) => {
+              const next = { ...current }
+              if (!body) delete next[draftOwnerId]
+              else next[draftOwnerId] = { body, idempotencyKey: '' }
+              return next
+            })
+          }} placeholder={`Escreva para ${counterpartName.split(/\s+/)[0]}...`} rows={1} /></label>
+          <button type="submit" disabled={!draft.trim() || sending} aria-label="Enviar mensagem">{sending ? <LoaderCircle className="spin" size={18} /> : <Send size={18} />}</button>
+        </form>
+      </div>
     </section>
   </div>
 }

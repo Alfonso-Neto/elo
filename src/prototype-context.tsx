@@ -8,6 +8,7 @@ type StudentNote = { id: string; studentId: string; text: string; createdAt: str
 export type AssistantEntry = { kind: 'exercise-pain'; movement: string } | null
 export type WorkoutSessionDraft = { title: string; exercises: Exercise[] }
 export type FormSessionDraft = { title: string; questions: FormQuestion[] }
+export type MessageSessionDraft = { body: string; idempotencyKey: string }
 
 type PrototypeContextValue = {
   role: Role
@@ -21,6 +22,7 @@ type PrototypeContextValue = {
   painReports: PainReport[]
   sessions: Session[]
   messages: ChatMessage[]
+  messageSessionDrafts: Record<string, MessageSessionDraft>
   formQuestions: FormQuestion[]
   formDraftStudentId: string
   formSessionDrafts: Record<string, FormSessionDraft>
@@ -50,6 +52,7 @@ type PrototypeContextValue = {
   reviewPainReports: () => void
   setSessions: React.Dispatch<React.SetStateAction<Session[]>>
   addMessage: (sender: Role, text: string) => void
+  setMessageSessionDrafts: React.Dispatch<React.SetStateAction<Record<string, MessageSessionDraft>>>
   setFormQuestions: React.Dispatch<React.SetStateAction<FormQuestion[]>>
   setFormTitle: (title: string) => void
   setFormDraftStudentId: (studentId: string) => void
@@ -117,6 +120,7 @@ export function PrototypeProvider({ children, lockedRole }: { children: ReactNod
   const [painReports, setPainReports] = useState<PainReport[]>(() => demoState('elo-pain', initialPainReports, []))
   const [sessions, setSessions] = useState<Session[]>(() => demoState('elo-sessions', initialSessions, []))
   const [messages, setMessages] = useState<ChatMessage[]>(() => demoState('elo-messages', initialMessages, []))
+  const [messageSessionDrafts, setMessageSessionDrafts] = useState<Record<string, MessageSessionDraft>>({})
   const [formQuestions, setFormQuestions] = useState<FormQuestion[]>(() => demoState('elo-form', generalForm, generalForm))
   const [formDraftStudentId, setFormDraftStudentId] = useState('')
   const [formSessionDrafts, setFormSessionDrafts] = useState<Record<string, FormSessionDraft>>({})
@@ -283,7 +287,7 @@ export function PrototypeProvider({ children, lockedRole }: { children: ReactNod
     Object.keys(localStorage).filter((key) => key.startsWith('elo-') && key !== 'elo-auth').forEach((key) => localStorage.removeItem(key))
     setWorkout(initialWorkout); setWorkoutName('Treino A · Inferiores conscientes'); setWorkoutDraftStudentId(''); setWorkoutSessionDrafts({}); setStudentWorkout(initialWorkout); setStudentWorkoutName('Treino A · Inferiores conscientes'); setPainReports(initialPainReports)
     setFormDraftStudentId(''); setFormSessionDrafts({}); setFormLastSentDrafts({})
-    setSessions(initialSessions); setMessages(initialMessages); setFormQuestions(generalForm); setPublishedFormQuestions(generalForm); setFormTitle('Anamnese · contexto inicial'); setPublishedFormTitle('Anamnese geral'); setFormAnswers({}); setCompletedExercises([])
+    setSessions(initialSessions); setMessages(initialMessages); setMessageSessionDrafts({}); setFormQuestions(generalForm); setPublishedFormQuestions(generalForm); setFormTitle('Anamnese · contexto inicial'); setPublishedFormTitle('Anamnese geral'); setFormAnswers({}); setCompletedExercises([])
     const resetRole = lockedRole ?? 'trainer'
     const resetPage = homeForRole(resetRole)
     setCompletedMeals([]); setWater(3); setFormSubmitted(false); setFormSent(true); setWorkoutSent(false); setWorkoutFeedback(null); setStudentNotes([]); setAssistantEntry(null); setRole(resetRole); setPage(resetPage)
@@ -291,11 +295,11 @@ export function PrototypeProvider({ children, lockedRole }: { children: ReactNod
   }
 
   const value = useMemo<PrototypeContextValue>(() => ({
-    role, page, workout, workoutName, workoutDraftStudentId, workoutSessionDrafts, studentWorkout, studentWorkoutName, painReports, sessions, messages, formQuestions, formDraftStudentId, formSessionDrafts, formLastSentDrafts, publishedFormQuestions, formTitle, publishedFormTitle, formAnswers, completedExercises,
+    role, page, workout, workoutName, workoutDraftStudentId, workoutSessionDrafts, studentWorkout, studentWorkoutName, painReports, sessions, messages, messageSessionDrafts, formQuestions, formDraftStudentId, formSessionDrafts, formLastSentDrafts, publishedFormQuestions, formTitle, publishedFormTitle, formAnswers, completedExercises,
     completedMeals, water, formSubmitted, formSent, workoutSent, workoutFeedback, studentNotes, selectedStudentId, assistantEntry, toast, navigate, switchRole,
-    setWorkout, setWorkoutName, setWorkoutDraftStudentId, setWorkoutSessionDrafts, addPainReport, reviewPainReports, setSessions, addMessage, setFormQuestions, setFormTitle, setFormDraftStudentId, setFormSessionDrafts, setFormLastSentDrafts,
+    setWorkout, setWorkoutName, setWorkoutDraftStudentId, setWorkoutSessionDrafts, addPainReport, reviewPainReports, setSessions, addMessage, setMessageSessionDrafts, setFormQuestions, setFormTitle, setFormDraftStudentId, setFormSessionDrafts, setFormLastSentDrafts,
     setCompletedExercises, toggleMeal, setWater, submitForm, sendWorkout, sendForm, submitWorkoutFeedback, addStudentNote, setSelectedStudentId, openExercisePainReport, clearAssistantEntry, notify, resetPrototype,
-  }), [role, page, workout, workoutName, workoutDraftStudentId, workoutSessionDrafts, studentWorkout, studentWorkoutName, painReports, sessions, messages, formQuestions, formDraftStudentId, formSessionDrafts, formLastSentDrafts, publishedFormQuestions, formTitle, publishedFormTitle, formAnswers, completedExercises, completedMeals, water, formSubmitted, formSent, workoutSent, workoutFeedback, studentNotes, selectedStudentId, assistantEntry, toast, lockedRole])
+  }), [role, page, workout, workoutName, workoutDraftStudentId, workoutSessionDrafts, studentWorkout, studentWorkoutName, painReports, sessions, messages, messageSessionDrafts, formQuestions, formDraftStudentId, formSessionDrafts, formLastSentDrafts, publishedFormQuestions, formTitle, publishedFormTitle, formAnswers, completedExercises, completedMeals, water, formSubmitted, formSent, workoutSent, workoutFeedback, studentNotes, selectedStudentId, assistantEntry, toast, lockedRole])
 
   return <PrototypeContext.Provider value={value}>{children}</PrototypeContext.Provider>
 }
