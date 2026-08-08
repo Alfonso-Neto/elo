@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest'
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { App } from '../App'
 
 beforeEach(() => {
@@ -58,10 +58,13 @@ describe('Elo validation prototype', () => {
     fireEvent.click(screen.getByRole('button', { name: /^Anamnese$/i }))
     fireEvent.click(await screen.findByRole('button', { name: /Revisar e enviar/i }))
     expect(screen.getByText(/precisa registrar o consentimento/i)).toBeInTheDocument()
-    fireEvent.click(screen.getByLabelText(/Li e concordo/i))
+    const consent = screen.getByLabelText(/Li e concordo/i)
+    expect(consent).toHaveAttribute('aria-describedby', 'student-form-consent-error')
+    await waitFor(() => expect(consent).toHaveFocus())
+    fireEvent.click(consent)
     fireEvent.click(screen.getByRole('button', { name: 'Ganhar massa' }))
     fireEvent.click(screen.getByRole('button', { name: 'Sim' }))
-    fireEvent.change(screen.getByPlaceholderText(/Escreva com suas palavras/i), { target: { value: 'Dor leve no joelho direito.' } })
+    fireEvent.change(screen.getByRole('textbox', { name: /Tem alguma lesão ou dor atual/i }), { target: { value: 'Dor leve no joelho direito.' } })
     fireEvent.click(screen.getByRole('button', { name: /Revisar e enviar/i }))
     expect(screen.getByRole('heading', { name: /Anamnese concluída/i })).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: /^Treinador$/i }))

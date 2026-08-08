@@ -227,8 +227,10 @@ export function LiveStudentFormScreen() {
   const [answers, setAnswers] = useState<DraftAnswers>({})
   const [consent, setConsent] = useState(false)
   const [consentError, setConsentError] = useState(false)
+  const [invalidQuestionId, setInvalidQuestionId] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const keys = useRef<{ consent: string; submission: string } | null>(null)
+  const consentRef = useRef<HTMLInputElement>(null)
 
   const load = async () => {
     if (!scope) return
@@ -240,19 +242,29 @@ export function LiveStudentFormScreen() {
         const page = await listAnamnesisSubmissions(scope, undefined, { limit: 50 })
         existing = page.items.find((item) => item.assignmentId === nextAssignment.id) ?? null
       }
-      setAssignment(nextAssignment); setSubmission(existing); setAnswers({}); setConsent(false); keys.current = null; setPhase('ready')
+      setAssignment(nextAssignment); setSubmission(existing); setAnswers({}); setConsent(false); setInvalidQuestionId(''); keys.current = null; setPhase('ready')
     } catch (cause) {
       setPhase('error'); setError(cause instanceof Error ? cause.message : 'Não foi possível carregar a anamnese.')
     }
   }
   useEffect(() => { void load() }, [scope?.workspaceId, scope?.userId])
-  const changed = () => { keys.current = null; setError(''); setConsentError(false) }
+  const changed = () => { keys.current = null; setError(''); setConsentError(false); setInvalidQuestionId('') }
   const setAnswer = (id: string, value: string | string[]) => { changed(); setAnswers((items) => ({ ...items, [id]: value })) }
   const submit = async () => {
     if (!scope || !assignment || submitting) return
-    if (!consent) { setConsentError(true); return }
+    if (!consent) { setConsentError(true); window.requestAnimationFrame(() => consentRef.current?.focus()); return }
     const normalized = buildAnamnesisAnswers(assignment.questions, answers)
-    if (!normalized) { setError('Revise as respostas obrigatórias e os formatos informados.'); return }
+    if (!normalized) {
+      const invalidQuestion = assignment.questions.find((question) => !buildAnamnesisAnswers([question], { [question.id]: answers[question.id] }))
+      setInvalidQuestionId(invalidQuestion?.id ?? '')
+      setError('Revise as respostas obrigatórias e os formatos informados.')
+      window.requestAnimationFrame(() => {
+        const root = invalidQuestion ? document.getElementById(`anamnesis-${invalidQuestion.id}`) : null
+        const control = root?.matches('input, textarea, button') ? root : root?.querySelector<HTMLElement>('button')
+        control?.focus()
+      })
+      return
+    }
     const commandKeys = keys.current ?? { consent: createIdempotencyKey('form-consent'), submission: createIdempotencyKey('submit-anamnesis') }
     keys.current = commandKeys
     setSubmitting(true); setError('')
@@ -272,23 +284,30 @@ export function LiveStudentFormScreen() {
   if (submission) return <div className="page enter"><BackButton onClick={() => navigate('today')} label="Voltar para hoje" /><SuccessState title="Anamnese respondida." copy={`“${assignment.title}” foi registrada em ${new Intl.DateTimeFormat('pt-BR',{ dateStyle:'short', timeStyle:'short' }).format(new Date(submission.submittedAt))}. A versão enviada é imutável.`} action={<Button onClick={() => navigate('today')}>Voltar para hoje</Button>} /><div className="submitted-answer-summary">{assignment.questions.map((question,index) => <article key={question.id}><Eyebrow>{String(index + 1).padStart(2,'0')}</Eyebrow><strong>{question.label}</strong><p>{Array.isArray(submission.answers[question.id]) ? (submission.answers[question.id] as string[]).join(', ') : String(submission.answers[question.id] ?? 'Não respondida')}</p></article>)}</div></div>
 
   return <div className="page live-training-screen student-form-page enter"><BackButton onClick={() => navigate('today')} label="Voltar para hoje" /><PageIntro eyebrow="ANAMNESE · CONSENTIMENTO EXPLÍCITO" title={assignment.title} copy={`Enviada por ${auth.membership?.trainerName ?? 'seu professor'}. Responda apenas o que for necessário para o acompanhamento.`} />
-    <div className="student-form-list">{assignment.questions.map((question,index) => <article key={question.id}><Eyebrow>{String(index + 1).padStart(2,'0')} · {question.type}</Eyebrow><label>{question.label}{question.required && <b> *</b>}</label><QuestionInput question={question} value={answers[question.id]} onChange={(value) => setAnswer(question.id,value)} /></article>)}</div>
-    <section className="student-form-consent"><ShieldCheck size={20} /><div><Eyebrow>DADO DE SAÚDE · FINALIDADE RESTRITA</Eyebrow><p>As respostas serão usadas para acompanhamento, segurança e comunicação com a equipe vinculada. Você poderá retirar o consentimento; novos usos e o acesso profissional serão interrompidos conforme a política vigente.</p><label className="switch-label"><input type="checkbox" checked={consent} disabled={submitting} onChange={(event) => { changed(); setConsent(event.target.checked) }} /><i /><span>Autorizo o registro e o compartilhamento destas respostas com meu professor.</span></label>{consentError && <small role="alert">Confirme o consentimento antes de enviar.</small>}</div></section>
+    <div className="student-form-list">{assignment.questions.map((question,index) => {
+      const inputId = `anamnesis-${question.id}`
+      const labelId = `${inputId}-label`
+      const scalarInput = question.type === 'long' || question.type === 'text' || question.type === 'number'
+      const invalid = invalidQuestionId === question.id
+      const errorId = `${inputId}-error`
+      return <article key={question.id}><Eyebrow>{String(index + 1).padStart(2,'0')} · {question.type}</Eyebrow><label id={labelId} htmlFor={scalarInput ? inputId : undefined}>{question.label}{question.required && <b> *</b>}</label><QuestionInput question={question} value={answers[question.id]} onChange={(value) => setAnswer(question.id,value)} inputId={inputId} labelId={labelId} invalid={invalid} errorId={errorId} />{invalid && <small id={errorId} className="student-question-error">Revise esta resposta para continuar.</small>}</article>
+    })}</div>
+    <section className="student-form-consent"><ShieldCheck size={20} /><div><Eyebrow>DADO DE SAÚDE · FINALIDADE RESTRITA</Eyebrow><p>As respostas serão usadas para acompanhamento, segurança e comunicação com a equipe vinculada. Você poderá retirar o consentimento; novos usos e o acesso profissional serão interrompidos conforme a política vigente.</p><label className="switch-label"><input ref={consentRef} type="checkbox" checked={consent} disabled={submitting} onChange={(event) => { changed(); setConsent(event.target.checked) }} aria-invalid={consentError} aria-describedby={consentError ? 'live-anamnesis-consent-error' : undefined} /><i /><span>Autorizo o registro e o compartilhamento destas respostas com meu professor.</span></label>{consentError && <small id="live-anamnesis-consent-error" role="alert">Confirme o consentimento antes de enviar.</small>}</div></section>
     {error && <p className="builder-validation" role="alert"><AlertCircleIcon /> {error}</p>}
     <Button className="wide student-form-submit" disabled={submitting} onClick={() => void submit()}>{submitting ? <LoaderCircle className="spin" size={16} /> : <CheckCircle2 size={16} />} Enviar respostas</Button>
   </div>
 }
 
-function QuestionInput({ question, value, onChange }: { question: FormQuestion; value: string | string[] | undefined; onChange: (value: string | string[]) => void }) {
+function QuestionInput({ question, value, onChange, inputId, labelId, invalid, errorId }: { question: FormQuestion; value: string | string[] | undefined; onChange: (value: string | string[]) => void; inputId: string; labelId: string; invalid: boolean; errorId: string }) {
   const scalar = typeof value === 'string' ? value : ''
-  if (question.type === 'long') return <textarea value={scalar} maxLength={4000} onChange={(event) => onChange(event.target.value)} placeholder="Sua resposta" />
-  if (question.type === 'text') return <input value={scalar} maxLength={500} onChange={(event) => onChange(event.target.value)} placeholder="Sua resposta" />
-  if (question.type === 'number') return <input inputMode="decimal" value={scalar} onChange={(event) => onChange(event.target.value)} placeholder="Ex.: 3 ou 7,5" />
-  if (question.type === 'scale') return <div className="student-scale" role="group" aria-label={question.label}>{Array.from({ length: 11 },(_,number) => <button className={scalar === String(number) ? 'active' : ''} aria-pressed={scalar === String(number)} onClick={() => onChange(String(number))} key={number}>{number}</button>)}</div>
+  if (question.type === 'long') return <textarea id={inputId} value={scalar} maxLength={4000} aria-required={question.required} aria-invalid={invalid} aria-describedby={invalid ? errorId : undefined} onChange={(event) => onChange(event.target.value)} placeholder="Sua resposta" />
+  if (question.type === 'text') return <input id={inputId} value={scalar} maxLength={500} aria-required={question.required} aria-invalid={invalid} aria-describedby={invalid ? errorId : undefined} onChange={(event) => onChange(event.target.value)} placeholder="Sua resposta" />
+  if (question.type === 'number') return <input id={inputId} inputMode="decimal" value={scalar} aria-required={question.required} aria-invalid={invalid} aria-describedby={invalid ? errorId : undefined} onChange={(event) => onChange(event.target.value)} placeholder="Ex.: 3 ou 7,5" />
+  if (question.type === 'scale') return <div id={inputId} className="student-scale" role="group" aria-labelledby={labelId} aria-invalid={invalid} aria-describedby={invalid ? errorId : undefined}>{Array.from({ length: 11 },(_,number) => <button type="button" className={scalar === String(number) ? 'active' : ''} aria-pressed={scalar === String(number)} onClick={() => onChange(String(number))} key={number}>{number}</button>)}</div>
   const options = question.type === 'yesno' ? ['Sim','Não'] : question.options ?? []
   if (question.type === 'multi') {
     const selected = Array.isArray(value) ? value : []
-    return <div className="student-choices" role="group" aria-label={question.label}>{options.map((option) => { const active = selected.includes(option); return <button className={active ? 'active' : ''} aria-pressed={active} key={option} onClick={() => onChange(active ? selected.filter((item) => item !== option) : [...selected, option])}><i>{active && <Check size={12} />}</i>{option}</button> })}</div>
+    return <div id={inputId} className="student-choices" role="group" aria-labelledby={labelId} aria-invalid={invalid} aria-describedby={invalid ? errorId : undefined}>{options.map((option) => { const active = selected.includes(option); return <button type="button" className={active ? 'active' : ''} aria-pressed={active} key={option} onClick={() => onChange(active ? selected.filter((item) => item !== option) : [...selected, option])}><i>{active && <Check size={12} />}</i>{option}</button> })}</div>
   }
-  return <div className="student-choices" role="radiogroup" aria-label={question.label}>{options.map((option) => <button role="radio" className={scalar === option ? 'active' : ''} aria-checked={scalar === option} key={option} onClick={() => onChange(option)}><i>{scalar === option && <Check size={12} />}</i>{option}</button>)}</div>
+  return <div id={inputId} className="student-choices" role="radiogroup" aria-labelledby={labelId} aria-required={question.required} aria-invalid={invalid} aria-describedby={invalid ? errorId : undefined}>{options.map((option) => <button type="button" role="radio" className={scalar === option ? 'active' : ''} aria-checked={scalar === option} key={option} onClick={() => onChange(option)}><i>{scalar === option && <Check size={12} />}</i>{option}</button>)}</div>
 }
