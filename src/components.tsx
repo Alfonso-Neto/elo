@@ -1,4 +1,4 @@
-import { useEffect, useRef, type ReactNode, type RefObject } from 'react'
+import { useEffect, useId, useRef, type ReactNode, type RefObject } from 'react'
 import { Check, ChevronLeft, Link2, Pause, Play, X } from 'lucide-react'
 
 export function Brand() {
@@ -49,21 +49,23 @@ function useDialogBehavior(ref: RefObject<HTMLElement | null>, onClose: () => vo
 
 export function Modal({ title, eyebrow, onClose, children, size = 'medium' }: { title: string; eyebrow?: string; onClose: () => void; children: ReactNode; size?: 'small' | 'medium' | 'large' }) {
   const ref = useRef<HTMLElement>(null)
+  const titleId = useId()
   useDialogBehavior(ref, onClose)
   return <div className="modal-backdrop" onMouseDown={onClose}>
-    <section ref={ref} className={`modal ${size}`} role="dialog" aria-modal="true" aria-labelledby="modal-title" tabIndex={-1} onMouseDown={(event) => event.stopPropagation()}>
+    <section ref={ref} className={`modal ${size}`} role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1} onMouseDown={(event) => event.stopPropagation()}>
       <button className="icon-button modal-close" onClick={onClose} aria-label="Fechar"><X size={19} /></button>
-      {eyebrow && <Eyebrow accent>{eyebrow}</Eyebrow>}<h2 id="modal-title">{title}</h2>{children}
+      {eyebrow && <Eyebrow accent>{eyebrow}</Eyebrow>}<h2 id={titleId}>{title}</h2>{children}
     </section>
   </div>
 }
 
 export function Drawer({ title, eyebrow, onClose, children }: { title: string; eyebrow?: string; onClose: () => void; children: ReactNode }) {
   const ref = useRef<HTMLElement>(null)
+  const titleId = useId()
   useDialogBehavior(ref, onClose)
-  return <div className="modal-backdrop" onMouseDown={onClose}><aside ref={ref} className="drawer" role="dialog" aria-modal="true" aria-labelledby="drawer-title" tabIndex={-1} onMouseDown={(event) => event.stopPropagation()}>
+  return <div className="modal-backdrop" onMouseDown={onClose}><aside ref={ref} className="drawer" role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1} onMouseDown={(event) => event.stopPropagation()}>
     <button className="icon-button modal-close" onClick={onClose} aria-label="Fechar"><X size={19} /></button>
-    {eyebrow && <Eyebrow accent>{eyebrow}</Eyebrow>}<h2 id="drawer-title">{title}</h2>{children}
+    {eyebrow && <Eyebrow accent>{eyebrow}</Eyebrow>}<h2 id={titleId}>{title}</h2>{children}
   </aside></div>
 }
 

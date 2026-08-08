@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest'
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { App } from '../App'
 import { PrototypeProvider, usePrototype } from '../prototype-context'
 
@@ -15,6 +15,18 @@ describe('Elo authentication entry', () => {
     expect(screen.getByText(/Ambiente sem conexão de autenticação/i)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Explorar demonstração/i })).toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: /Bom dia, André/i })).not.toBeInTheDocument()
+    expect(document.getElementById('main-content')).toBeInTheDocument()
+  })
+
+  it('describes validation errors and focuses the first invalid field', async () => {
+    render(<App />)
+    const submit = screen.getAllByRole('button', { name: /^Entrar$/i }).at(-1)
+    expect(submit).toBeDefined()
+    fireEvent.click(submit!)
+    const email = screen.getByLabelText(/^E-mail$/i)
+    expect(email).toHaveAttribute('aria-describedby', 'login-email-error')
+    expect(screen.getByText('Informe um e-mail válido.')).toHaveAttribute('id', 'login-email-error')
+    await waitFor(() => expect(email).toHaveFocus())
   })
 
   it('progressively reveals the professional registration fields', () => {
