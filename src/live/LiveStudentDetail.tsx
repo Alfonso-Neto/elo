@@ -7,7 +7,7 @@ import { useAuth } from '../auth/auth-context'
 import { BackButton, Button, Drawer, Eyebrow, Modal, PageIntro, Progress, SectionTitle } from '../components'
 import { listEnrolledStudents, type EnrolledStudent } from '../onboarding/enrollment-service'
 import { usePrototype } from '../prototype-context'
-import { createIdempotencyKey, createSignalService, MAX_SIGNAL_PAGE_SIZE, type PainReportSummary } from '../signals'
+import { createIdempotencyKey, createSignalService, MAX_SIGNAL_PAGE_SIZE, type PainReportLifecycleSummary } from '../signals'
 import {
   createTrainerStudentNote, getLatestWorkoutVersion, listAnamnesisAssignments,
   listAnamnesisSubmissions, listTrainerStudentNotes, listWorkoutCompletions,
@@ -20,6 +20,7 @@ import {
 } from './nutrition'
 import './live-training.css'
 import './live-nutrition.css'
+import { LivePainReportDrawer } from './LivePainReportDrawer'
 
 type Phase = 'loading' | 'ready' | 'error'
 
@@ -38,7 +39,7 @@ export function LiveStudentDetailScreen() {
   const [students, setStudents] = useState<EnrolledStudent[]>([])
   const [phase, setPhase] = useState<Phase>('loading')
   const [error, setError] = useState('')
-  const [reports, setReports] = useState<PainReportSummary[]>([])
+  const [reports, setReports] = useState<PainReportLifecycleSummary[]>([])
   const [workout, setWorkout] = useState<WorkoutVersion | null>(null)
   const [completions, setCompletions] = useState<WorkoutCompletion[]>([])
   const [assignments, setAssignments] = useState<AnamnesisAssignment[]>([])
@@ -50,6 +51,7 @@ export function LiveStudentDetailScreen() {
   const [noteDraft, setNoteDraft] = useState('')
   const [noteError, setNoteError] = useState('')
   const [savingNote, setSavingNote] = useState(false)
+  const [selectedReport, setSelectedReport] = useState<PainReportLifecycleSummary | null>(null)
   const [loadedTargetIdentity, setLoadedTargetIdentity] = useState('')
   const noteKey = useRef('')
   const selectedStudentRef = useRef(selectedStudentId)
@@ -79,6 +81,7 @@ export function LiveStudentDetailScreen() {
     setNotes([])
     setNutrition(null)
     setNutritionUnavailable(false)
+    setSelectedReport(null)
     setLoadedTargetIdentity('')
   }, [])
 
@@ -122,7 +125,11 @@ export function LiveStudentDetailScreen() {
     try {
       const [core, nutritionResult] = await Promise.all([
         Promise.all([
-          createSignalService().listStudentReports(scopeSnapshot.workspaceId, studentUserId, { limit: MAX_SIGNAL_PAGE_SIZE }),
+          createSignalService().listTrainerPainReports(scopeSnapshot.workspaceId, {
+            studentUserId,
+            unresolvedOnly: false,
+            limit: MAX_SIGNAL_PAGE_SIZE,
+          }),
           getLatestWorkoutVersion(scopeSnapshot, studentUserId),
           listWorkoutCompletions(scopeSnapshot, studentUserId, { limit: 30 }),
           listAnamnesisAssignments(scopeSnapshot, studentUserId, { limit: 30 }),
@@ -197,12 +204,13 @@ export function LiveStudentDetailScreen() {
   return <div className="page live-training-screen live-student-detail enter"><BackButton onClick={() => navigate('students')} label="Voltar para alunos" />
     <PageIntro eyebrow="ALUNO VINCULADO · CONTEXTO REAL" title={student.displayName} copy={`Vínculo ativo em ${membership?.workspaceName}. Nenhum dado demonstrativo aparece nesta conta.`} action={<div className="profile-actions"><Button variant="secondary" onClick={() => navigate('messages')}><MessageCircle size={16} /> Conversar</Button><Button onClick={() => navigate('copilot')}><Sparkles size={16} /> Abrir Copiloto</Button></div>} />
     <section className="profile-metrics"><div><small>RELATOS RECENTES</small><strong>{reports.length}</strong><span>consentidos no workspace</span></div><div><small>CONCLUSÕES</small><strong>{completions.length}</strong><span>registros carregados</span></div><div><small>ANAMNESES</small><strong>{submissions.length}/{assignments.length}</strong><span>respondidas / enviadas</span></div><div><small>PLANO ATUAL</small><strong>{workout ? `V${workout.versionNumber}` : '—'}</strong><span>{workout?.title ?? 'sem publicação'}</span></div></section>
-    <div className="profile-grid"><section><SectionTitle index="01" title="Linha de sinais" copy="Dados reais, com origem e horário preservados." /><div className="history-list">{reports.map((report) => <article key={report.id}><span className={`history-dot ${report.intensity >= 8 || report.redFlags.length ? 'open' : 'info'}`} /><div><strong>{report.region} · intensidade {report.intensity}/10</strong><p>{report.movement} · {report.timing}{report.redFlags.length ? ` · ${report.redFlags.length} alerta(s)` : ''}</p><small>Relato estruturado · {time(report.createdAt)}</small></div><Button variant="ghost" onClick={() => navigate('copilot')}>Revisar</Button></article>)}{completions.map((completion) => <article key={completion.id}><span className="history-dot info" /><div><strong>Treino concluído · RPE {completion.rpe}/10</strong><p>{completion.mood}{completion.comment ? ` · ${completion.comment}` : ''}</p><small>Feedback do aluno · {time(completion.completedAt)}</small></div><span className="tag blue">Feedback</span></article>)}{notes.map((note) => <article key={note.id}><span className="history-dot info" /><div><strong>Observação profissional privada</strong><p>{note.note}</p><small>Professor · {time(note.createdAt)}</small></div><span className="tag blue">Nota</span></article>)}{!reports.length && !completions.length && !notes.length && <div className="mini-empty">Nenhum sinal ou feedback disponível com o acesso vigente.</div>}</div></section>
+    <div className="profile-grid"><section><SectionTitle index="01" title="Linha de sinais" copy="Dados reais, com origem, estado e horário preservados." /><div className="history-list">{reports.map((report) => <article key={report.id}><span className={`history-dot ${report.status === 'resolved' ? 'info' : report.intensity >= 8 || report.redFlags.length ? 'open' : 'info'}`} /><div><strong>{report.region} · intensidade {report.intensity}/10</strong><p>{report.movement} · {report.timing}{report.redFlags.length ? ` · ${report.redFlags.length} alerta(s)` : ''}</p><small>Relato estruturado · {time(report.createdAt)}</small></div><span className={`tag ${report.status === 'resolved' ? 'success' : report.status === 'acknowledged' ? 'blue' : 'warning'}`}>{report.status === 'resolved' ? 'Resolvido' : report.status === 'acknowledged' ? 'Em acompanhamento' : 'Aberto'}</span><Button variant="ghost" onClick={() => setSelectedReport(report)}>Abrir</Button></article>)}{completions.map((completion) => <article key={completion.id}><span className="history-dot info" /><div><strong>Treino concluído · RPE {completion.rpe}/10</strong><p>{completion.mood}{completion.comment ? ` · ${completion.comment}` : ''}</p><small>Feedback do aluno · {time(completion.completedAt)}</small></div><span className="tag blue">Feedback</span></article>)}{notes.map((note) => <article key={note.id}><span className="history-dot info" /><div><strong>Observação profissional privada</strong><p>{note.note}</p><small>Professor · {time(note.createdAt)}</small></div><span className="tag blue">Nota</span></article>)}{!reports.length && !completions.length && !notes.length && <div className="mini-empty">Nenhum sinal ou feedback disponível com o acesso vigente.</div>}</div></section>
       <aside className="profile-side"><SectionTitle index="02" title="Plano e ações" /><div className="current-plan"><Dumbbell size={22} /><Eyebrow>{workout ? `VERSÃO ${workout.versionNumber} · ${time(workout.publishedAt)}` : 'SEM TREINO PUBLICADO'}</Eyebrow><h3>{workout?.title ?? 'Primeira prescrição'}</h3><p>{workout ? `${workout.exercises.length} exercícios. Alterações futuras criam uma nova versão.` : 'Abra o editor para preparar e publicar a primeira versão.'}</p><Button variant="secondary" onClick={() => navigate('builder')}>Abrir editor <ArrowRight size={16} /></Button></div>
         <section className="trainer-nutrition-card" aria-label="Plano nutricional em modo leitura"><header><span><Salad size={18} /></span><div><Eyebrow>NUTRIÇÃO · SOMENTE LEITURA</Eyebrow><strong>{nutritionUnavailable ? 'Consulta indisponível' : nutrition?.plan ? `Versão ${nutrition.plan.versionNumber}` : 'Sem plano disponível'}</strong></div></header>{nutritionUnavailable ? <p>Não foi possível verificar o acesso nutricional agora. Nenhum dado foi presumido.</p> : nutrition?.plan ? <><h3>{nutrition.plan.title}</h3><p>{nutrition.plan.nutritionistName} · {nutrition.plan.nutritionistCrn}</p><div className="trainer-nutrition-stats"><span><strong>{completedNutritionMeals.size}/{nutrition.plan.meals.length}</strong><small>refeições hoje</small></span><span><Waves size={15} /><strong>{hydrationMl} ml</strong><small>água registrada</small></span></div><Progress value={(completedNutritionMeals.size / nutrition.plan.meals.length) * 100} label="Refeições registradas hoje" /><small className="trainer-nutrition-boundary">Visível apenas com consentimento atual. O professor não prescreve nem altera este plano.</small></> : <p>Nenhum plano foi liberado pelas regras de consentimento e vínculo atuais. Isso também pode significar que a integração parceira ainda não enviou uma versão.</p>}</section>
         <div className="quick-stack"><button onClick={() => navigate('forms')}><FileCheck2 size={17} /><span><strong>Anamneses</strong><small>{assignments.filter((item) => !submissionIds.has(item.id)).length} pendentes</small></span><ArrowRight size={16} /></button><button onClick={() => navigate('schedule')}><CalendarDays size={17} /><span><strong>Agendar sessão</strong><small>Abrir agenda compartilhada</small></span><ArrowRight size={16} /></button><button onClick={() => setNoteOpen(true)}><CirclePlus size={17} /><span><strong>Adicionar observação</strong><small>Exige consentimento de saúde vigente</small></span><ArrowRight size={16} /></button></div></aside>
     </div>
     <section className="section-block"><SectionTitle index="03" title="Anamneses enviadas" /><div className="assignment-list">{assignments.map((assignment) => <button key={assignment.id} disabled><span className="person-avatar priority">{initials(student.displayName)}</span><span><strong>{assignment.title}</strong><small>{time(assignment.assignedAt)}</small></span><span className={`tag ${submissionIds.has(assignment.id) ? 'success' : 'warning'}`}>{submissionIds.has(assignment.id) ? 'Concluída' : 'Pendente'}</span></button>)}{!assignments.length && <p className="mini-empty">Nenhuma anamnese enviada.</p>}</div></section>
+    {selectedReport && <LivePainReportDrawer report={selectedReport} studentName={student.displayName} onClose={() => setSelectedReport(null)} onChanged={async () => { await loadStudent(); setSelectedReport(null) }} onOpenCopilot={() => navigate('copilot')} />}
     {noteOpen && <Modal title={`Observação sobre ${student.displayName}`} eyebrow="NOTA PROFISSIONAL · DADO SENSÍVEL" onClose={() => !savingNote && setNoteOpen(false)} size="small"><div className="form-stack"><p className="modal-lead">Registre somente o necessário para o acompanhamento. O servidor exige consentimento vigente e restringe a leitura à equipe autorizada.</p><label><span>Observação</span><textarea autoFocus disabled={savingNote} value={noteDraft} onChange={(event) => { if (savingNote) return; noteKey.current = ''; setNoteError(''); setNoteDraft(event.target.value.slice(0,2000)) }} placeholder="Contexto útil para o próximo atendimento..." /></label>{noteError && <p className="form-error" role="alert">{noteError}</p>}<Button className="wide" disabled={!noteDraft.trim() || savingNote} onClick={() => void saveNote()}>{savingNote ? <LoaderCircle className="spin" size={16} /> : <Activity size={16} />} Registrar no histórico</Button></div></Modal>}
   </div>
 }

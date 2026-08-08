@@ -9,9 +9,10 @@ import { useAuth } from '../auth/auth-context'
 import { Button, Eyebrow, PageIntro, SectionTitle, SuccessState } from '../components'
 import { listEnrolledStudents, type EnrolledStudent } from '../onboarding/enrollment-service'
 import { usePrototype } from '../prototype-context'
-import { createIdempotencyKey, createSignalService, MAX_SIGNAL_PAGE_SIZE, type PainReportSummary } from '../signals'
+import { createIdempotencyKey, createSignalService, MAX_SIGNAL_PAGE_SIZE, type PainReportLifecycleSummary } from '../signals'
 import type { Exercise } from '../types'
 import { getLatestWorkoutVersion, type TrainingScope, type WorkoutVersion } from './training'
+import { LivePainReportDrawer } from './LivePainReportDrawer'
 import './live.css'
 
 type LoadPhase = 'loading' | 'ready' | 'error'
@@ -57,7 +58,7 @@ export function LiveTrainerCopilot() {
   const { membership, profile } = useAuth()
   const { navigate, selectedStudentId, setSelectedStudentId, setWorkout, setWorkoutName, setWorkoutDraftStudentId } = usePrototype()
   const [students, setStudents] = useState<EnrolledStudent[]>([])
-  const [reports, setReports] = useState<PainReportSummary[]>([])
+  const [reports, setReports] = useState<PainReportLifecycleSummary[]>([])
   const [currentWorkout, setCurrentWorkout] = useState<WorkoutVersion | null>(null)
   const [phase, setPhase] = useState<LoadPhase>('loading')
   const [loadError, setLoadError] = useState('')
@@ -67,39 +68,60 @@ export function LiveTrainerCopilot() {
   const [proposalId, setProposalId] = useState('')
   const [decision, setDecision] = useState<'accepted' | 'rejected' | null>(null)
   const [deciding, setDeciding] = useState(false)
+  const [selectedReport, setSelectedReport] = useState<PainReportLifecycleSummary | null>(null)
   const analysisKey = useRef('')
+  const rosterRequestVersion = useRef(0)
+  const selectedStudentIdRef = useRef(selectedStudentId)
+  selectedStudentIdRef.current = selectedStudentId
 
   const selectedStudent = students.find((student) => student.userId === selectedStudentId) ?? null
   const studentReports = useMemo(() => reports.filter((report) => report.studentUserId === selectedStudentId), [reports, selectedStudentId])
   const latestReport = studentReports[0] ?? null
 
-  const scope = useMemo<TrainingScope | null>(() => membership && profile ? {
+  const scope = useMemo<TrainingScope | null>(() => membership && profile?.accountRole === 'trainer' && membership.membershipRole !== 'student' ? {
     workspaceId: membership.workspaceId,
     userId: profile.id,
     role: 'trainer',
   } : null, [membership, profile])
+  const scopeIdentity = scope ? `${scope.workspaceId}:${scope.userId}` : ''
+  const activeScopeIdentityRef = useRef(scopeIdentity)
+  activeScopeIdentityRef.current = scopeIdentity
+  const [loadedScopeIdentity, setLoadedScopeIdentity] = useState('')
 
   const loadRoster = useCallback(async () => {
-    if (!membership) return
+    const requestVersion = ++rosterRequestVersion.current
+    const requestScopeIdentity = scopeIdentity
+    setStudents([])
+    setReports([])
+    setSelectedReport(null)
+    setLoadedScopeIdentity('')
     setPhase('loading')
     setLoadError('')
+    if (!scope || !requestScopeIdentity) return
     try {
       const [nextStudents, reportPage] = await Promise.all([
         listEnrolledStudents(),
-        createSignalService().listWorkspaceReports(membership.workspaceId, { limit: MAX_SIGNAL_PAGE_SIZE }),
+        createSignalService().listTrainerPainReports(scope.workspaceId, { unresolvedOnly: true, limit: MAX_SIGNAL_PAGE_SIZE }),
       ])
+      if (requestVersion !== rosterRequestVersion.current || requestScopeIdentity !== activeScopeIdentityRef.current) return
       setStudents(nextStudents)
       setReports(reportPage.items)
-      const nextId = nextStudents.some((student) => student.userId === selectedStudentId) ? selectedStudentId : nextStudents[0]?.userId ?? ''
-      if (nextId !== selectedStudentId) setSelectedStudentId(nextId)
+      const preferred = selectedStudentIdRef.current
+      const nextId = nextStudents.some((student) => student.userId === preferred) ? preferred : nextStudents[0]?.userId ?? ''
+      if (nextId !== preferred) setSelectedStudentId(nextId)
+      setLoadedScopeIdentity(requestScopeIdentity)
       setPhase('ready')
     } catch (error) {
+      if (requestVersion !== rosterRequestVersion.current || requestScopeIdentity !== activeScopeIdentityRef.current) return
       setPhase('error')
       setLoadError(error instanceof Error ? error.message : 'Não foi possível carregar os contextos vinculados.')
     }
-  }, [membership, selectedStudentId, setSelectedStudentId])
+  }, [scope, scopeIdentity, setSelectedStudentId])
 
-  useEffect(() => { void loadRoster() }, [loadRoster])
+  useEffect(() => {
+    void loadRoster()
+    return () => { rosterRequestVersion.current += 1 }
+  }, [loadRoster])
   useEffect(() => {
     if (!scope || !selectedStudentId || !students.some((student) => student.userId === selectedStudentId)) {
       setCurrentWorkout(null)
@@ -117,18 +139,19 @@ export function LiveTrainerCopilot() {
     setProposal(null)
     setProposalId('')
     setDecision(null)
+    setSelectedReport(null)
     analysisKey.current = ''
   }, [selectedStudentId, latestReport?.id, currentWorkout?.id])
 
   const runAnalysis = async () => {
-    if (!membership || !selectedStudent || !latestReport || analysisPhase === 'loading') return
+    if (!scope || !selectedStudent || !latestReport || analysisPhase === 'loading') return
     const key = analysisKey.current || createIdempotencyKey('trainer-copilot')
     analysisKey.current = key
     setAnalysisPhase('loading')
     setAnalysisError('')
     try {
       const result = await createAssistantService().requestTrainerCopilot({
-        workspaceId: membership.workspaceId,
+        workspaceId: scope.workspaceId,
         studentId: selectedStudent.userId,
         report: formatPainReportForAssistant(latestReport),
         context: {
@@ -181,15 +204,16 @@ export function LiveTrainerCopilot() {
     }
   }
 
-  if (phase === 'loading') return <div className="page enter"><div className="live-loading"><LoaderCircle className="spin" size={24} /><p>Carregando alunos e sinais reais...</p></div></div>
+  if (!scope) return <div className="page enter"><div className="empty-state"><ShieldCheck size={30} /><h3>Copiloto profissional indisponível.</h3><p>Entre com uma conta de professor vinculada para abrir contextos de saúde protegidos.</p></div></div>
   if (phase === 'error') return <div className="page enter"><div className="empty-state"><ShieldCheck size={30} /><h3>O copiloto não abriu o contexto.</h3><p>{loadError}</p><Button variant="secondary" onClick={() => void loadRoster()}>Tentar novamente</Button></div></div>
+  if (phase === 'loading' || loadedScopeIdentity !== scopeIdentity) return <div className="page enter"><div className="live-loading"><LoaderCircle className="spin" size={24} /><p>Carregando alunos e sinais reais...</p></div></div>
   if (!students.length) return <div className="page enter"><PageIntro eyebrow="COPILOTO · REVISÃO HUMANA" title="Primeiro, crie um elo." copy="Convide um aluno para que sinais consentidos possam entrar no fluxo de decisão." /><div className="empty-state"><HeartPulse size={29} /><h3>Nenhum aluno vinculado.</h3><p>O copiloto não trabalha com pessoas ou dados fictícios na conta autenticada.</p><Button onClick={() => navigate('students')}>Convidar aluno <ArrowRight size={16} /></Button></div></div>
 
   return <div className="page copilot-page live-copilot enter">
     <PageIntro eyebrow={`CONTEXTO REAL · ${selectedStudent?.displayName.toUpperCase() ?? 'ALUNO'}`} title={<>Você prescreve.<br />Eu organizo os sinais.</>} copy="O copiloto propõe perguntas e mudanças limitadas. Você aceita, rejeita, edita e publica em etapas separadas." action={<label className="live-student-select"><span className="person-avatar priority">{studentInitials(selectedStudent?.displayName ?? 'Aluno')}</span><span><small>CONTEXTO ATIVO</small><select value={selectedStudentId} onChange={(event) => setSelectedStudentId(event.target.value)}>{students.map((student) => <option value={student.userId} key={student.userId}>{student.displayName}</option>)}</select></span></label>} />
 
     <section className="flow-section"><SectionTitle index="01" title="Sinal de origem" copy="Somente dados estruturados do workspace; a IA não recebe identificadores visíveis nem inventa o que falta." action={<button className="text-link" onClick={() => void loadRoster()}><RefreshCw size={15} /> Atualizar</button>} />
-      {latestReport ? <article className={`live-signal-source ${latestReport.intensity >= 8 || latestReport.redFlags.length ? 'danger' : ''}`}><span><HeartPulse size={20} /></span><div><Eyebrow>RELATO DO ALUNO · {timestampLabel(latestReport.createdAt)}</Eyebrow><h3>{latestReport.region} · {latestReport.movement}</h3><p>{latestReport.side} · {latestReport.timing} · intensidade {latestReport.intensity}/10</p></div><b>{latestReport.redFlags.length ? `${latestReport.redFlags.length} ALERTA${latestReport.redFlags.length > 1 ? 'S' : ''}` : 'SEM ALERTA MARCADO'}</b></article> : <div className="empty-state compact"><Activity size={25} /><h3>Nenhum relato para analisar.</h3><p>O copiloto só é iniciado quando existe um sinal real e consentido.</p></div>}
+      {latestReport ? <article className={`live-signal-source ${latestReport.intensity >= 8 || latestReport.redFlags.length ? 'danger' : ''}`}><span><HeartPulse size={20} /></span><div><Eyebrow>RELATO DO ALUNO · {timestampLabel(latestReport.createdAt)}</Eyebrow><h3>{latestReport.region} · {latestReport.movement}</h3><p>{latestReport.side} · {latestReport.timing} · intensidade {latestReport.intensity}/10</p></div><div className="live-signal-actions"><b>{latestReport.status === 'acknowledged' ? 'EM ACOMPANHAMENTO' : latestReport.redFlags.length ? `${latestReport.redFlags.length} ALERTA${latestReport.redFlags.length > 1 ? 'S' : ''}` : 'SEM ALERTA MARCADO'}</b><Button variant="ghost" onClick={() => setSelectedReport(latestReport)}>Revisar relato</Button></div></article> : <div className="empty-state compact"><Activity size={25} /><h3>Nenhum relato para analisar.</h3><p>O copiloto só é iniciado quando existe um sinal real e consentido.</p></div>}
     </section>
 
     <section className="flow-section"><SectionTitle index="02" title="Contexto de prescrição" copy={currentWorkout ? `Versão ${currentWorkout.versionNumber} · ${currentWorkout.exercises.length} exercícios · publicada em ${timestampLabel(currentWorkout.publishedAt)}` : 'Nenhum treino publicado para este aluno.'} />
@@ -209,5 +233,6 @@ export function LiveTrainerCopilot() {
       {analysisError && <p className="builder-validation" role="alert"><AlertTriangle size={15} /> {analysisError}</p>}
       {!decision ? <footer className="proposal-decision"><div><strong>Seu último olhar</strong><small>Aceitar cria apenas um rascunho editável. Publicar exige uma confirmação posterior.</small></div><Button variant="secondary" disabled={deciding} onClick={() => void decide('rejected')}><X size={16} /> Rejeitar proposta</Button><Button disabled={deciding} onClick={() => void decide('accepted')}><Check size={16} /> Aceitar como rascunho</Button></footer> : <SuccessState title={decision === 'accepted' ? 'Decisão registrada; rascunho preparado.' : 'Proposta rejeitada e registrada.'} copy={decision === 'accepted' ? (currentWorkout ? 'Revise cada parâmetro no editor. Nada foi publicado para o aluno.' : 'A decisão foi auditada. Publique um treino-base antes de aplicar mudanças.') : 'Nenhuma alteração foi aplicada ao treino.'} action={decision === 'accepted' && currentWorkout ? <Button onClick={() => navigate('builder')}>Abrir editor detalhado <ArrowRight size={16} /></Button> : <Button variant="secondary" onClick={() => navigate('dashboard')}>Voltar à visão geral</Button>} />}
     </section>}
+    {selectedReport && selectedStudent && <LivePainReportDrawer report={selectedReport} studentName={selectedStudent.displayName} onClose={() => setSelectedReport(null)} onChanged={async () => { await loadRoster(); setSelectedReport(null) }} />}
   </div>
 }

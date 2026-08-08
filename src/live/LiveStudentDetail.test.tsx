@@ -1,14 +1,14 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { PrototypeProvider, usePrototype } from '../prototype-context'
-import { MAX_SIGNAL_PAGE_SIZE, type PainReportSummary } from '../signals'
+import { MAX_SIGNAL_PAGE_SIZE, type PainReportLifecycleSummary } from '../signals'
 import type { TrainerStudentNote, WorkoutVersion } from './training'
 import { LiveStudentDetailScreen } from './LiveStudentDetail'
 
 const auth = vi.hoisted(() => ({ useAuth: vi.fn() }))
 const enrollment = vi.hoisted(() => ({ listEnrolledStudents: vi.fn() }))
 const signals = vi.hoisted(() => ({
-  listStudentReports: vi.fn(),
+  listTrainerPainReports: vi.fn(),
   listWorkspaceReports: vi.fn(),
 }))
 const training = vi.hoisted(() => ({
@@ -54,7 +54,7 @@ function workoutFor(studentUserId: string, title: string): WorkoutVersion {
   }
 }
 
-function reportFor(studentUserId: string, region: string): PainReportSummary {
+function reportFor(studentUserId: string, region: string): PainReportLifecycleSummary {
   return {
     id: `${studentUserId}-report`,
     sequence: 1,
@@ -68,6 +68,10 @@ function reportFor(studentUserId: string, region: string): PainReportSummary {
     onset: '2026-08-08T11:00:00.000Z',
     redFlags: [],
     createdAt: '2026-08-08T12:00:00.000Z',
+    status: 'open',
+    acknowledgedAt: null,
+    resolvedAt: null,
+    resolutionNote: null,
   }
 }
 
@@ -104,7 +108,7 @@ vi.mock('../signals', async (importOriginal) => {
   return {
     ...actual,
     createSignalService: () => ({
-      listStudentReports: signals.listStudentReports,
+      listTrainerPainReports: signals.listTrainerPainReports,
       listWorkspaceReports: signals.listWorkspaceReports,
     }),
   }
@@ -129,7 +133,7 @@ beforeEach(() => {
     membership: { workspaceId, workspaceName: 'Studio Horizonte', membershipRole: 'owner', trainerName: 'André Lima' },
   })
   enrollment.listEnrolledStudents.mockResolvedValue(roster)
-  signals.listStudentReports.mockResolvedValue({ items: [], nextOffset: null })
+  signals.listTrainerPainReports.mockResolvedValue({ items: [], nextOffset: null })
   training.getLatestWorkoutVersion.mockResolvedValue(null)
   training.listWorkoutCompletions.mockResolvedValue({ items: [], nextCursor: null })
   training.listAnamnesisAssignments.mockResolvedValue({ items: [], nextCursor: null })
@@ -141,18 +145,18 @@ beforeEach(() => {
 
 describe('live student detail privacy boundary', () => {
   it('uses the student-scoped health endpoint and does not reload the roster on target changes', async () => {
-    signals.listStudentReports.mockImplementation((_workspace: string, studentUserId: string) => Promise.resolve({
-      items: [reportFor(studentUserId, studentUserId === marinaId ? 'Joelho da Marina' : 'Ombro da Bianca')],
+    signals.listTrainerPainReports.mockImplementation((_workspace: string, options: { studentUserId: string }) => Promise.resolve({
+      items: [reportFor(options.studentUserId, options.studentUserId === marinaId ? 'Joelho da Marina' : 'Ombro da Bianca')],
       nextOffset: null,
     }))
     render(<PrototypeProvider lockedRole="trainer"><DetailHarness /></PrototypeProvider>)
 
     expect(await screen.findByRole('heading', { name: 'Marina Costa' })).toBeInTheDocument()
-    expect(signals.listStudentReports).toHaveBeenCalledWith(workspaceId, marinaId, { limit: MAX_SIGNAL_PAGE_SIZE })
+    expect(signals.listTrainerPainReports).toHaveBeenCalledWith(workspaceId, { studentUserId: marinaId, unresolvedOnly: false, limit: MAX_SIGNAL_PAGE_SIZE })
     expect(signals.listWorkspaceReports).not.toHaveBeenCalled()
     fireEvent.click(screen.getByRole('button', { name: 'Selecionar Bianca' }))
     expect(await screen.findByRole('heading', { name: 'Bianca Rocha' })).toBeInTheDocument()
-    expect(signals.listStudentReports).toHaveBeenCalledWith(workspaceId, biancaId, { limit: MAX_SIGNAL_PAGE_SIZE })
+    expect(signals.listTrainerPainReports).toHaveBeenCalledWith(workspaceId, { studentUserId: biancaId, unresolvedOnly: false, limit: MAX_SIGNAL_PAGE_SIZE })
     expect(enrollment.listEnrolledStudents).toHaveBeenCalledTimes(1)
   })
 
@@ -197,7 +201,7 @@ describe('live student detail privacy boundary', () => {
   })
 
   it('removes already-rendered private data immediately when trainer scope disappears', async () => {
-    signals.listStudentReports.mockResolvedValue({ items: [reportFor(marinaId, 'Segredo clínico da Marina')], nextOffset: null })
+    signals.listTrainerPainReports.mockResolvedValue({ items: [reportFor(marinaId, 'Segredo clínico da Marina')], nextOffset: null })
     training.listTrainerStudentNotes.mockResolvedValue({ items: [noteFor(marinaId, 'Observação privada da Marina')], nextCursor: null })
     const view = render(<PrototypeProvider lockedRole="trainer"><DetailHarness /></PrototypeProvider>)
 
