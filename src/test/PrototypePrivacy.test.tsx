@@ -3,10 +3,11 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import { PrototypeProvider, legacyPrototypeStorageKeys, usePrototype } from '../prototype-context'
 
 function StateProbe() {
-  const { addPainReport, assistantEntry, messages, openExercisePainReport, painReports, studentWorkout } = usePrototype()
+  const { addPainReport, assistantEntry, messages, openExercisePainReport, painReports, setWorkoutSessionDrafts, studentWorkout, workoutSessionDrafts } = usePrototype()
   return <div>
     <output>{`pain:${painReports.length} messages:${messages.length} workout:${studentWorkout.length}`}</output>
     <output>{assistantEntry?.movement ?? 'no-assistant-entry'}</output>
+    <output>{`drafts:${Object.keys(workoutSessionDrafts).length}`}</output>
     <button onClick={() => addPainReport({
       studentId: 'remote-student',
       studentName: 'Conta remota',
@@ -15,6 +16,9 @@ function StateProbe() {
       intensity: 4,
     })}>Mutate remote state</button>
     <button onClick={() => openExercisePainReport('  Movimento\nprivado  ')}>Open exercise pain flow</button>
+    <button onClick={() => setWorkoutSessionDrafts({
+      'remote-student': { title: 'Rascunho privado', exercises: [{ id: 'private', name: 'Movimento confidencial', muscle: 'Teste', sets: '3', reps: '10', load: '', rest: '', tempo: '', rir: '', note: '' }] },
+    })}>Keep private session draft</button>
   </div>
 }
 
@@ -43,5 +47,10 @@ describe('authenticated workspace privacy boundary', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Open exercise pain flow' }))
     expect(screen.getByText('Movimento privado')).toBeInTheDocument()
     expect(JSON.stringify({ ...localStorage })).not.toContain('Movimento privado')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Keep private session draft' }))
+    expect(screen.getByText('drafts:1')).toBeInTheDocument()
+    expect(JSON.stringify({ ...localStorage })).not.toContain('Rascunho privado')
+    expect(JSON.stringify({ ...localStorage })).not.toContain('Movimento confidencial')
   })
 })

@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { AssistantProposal } from '../assistant/assistant-service'
-import { PrototypeProvider } from '../prototype-context'
+import { PrototypeProvider, usePrototype } from '../prototype-context'
 import { LiveWorkoutBuilderScreen } from './LiveTrainerTraining'
 
 const mocks = vi.hoisted(() => ({
@@ -100,6 +100,16 @@ async function openReview() {
   return dialog
 }
 
+function DraftRouteHarness() {
+  const { navigate, page, workoutSessionDrafts } = usePrototype()
+  return <>
+    <output>{`rascunhos:${Object.keys(workoutSessionDrafts).length}`}</output>
+    {page === 'builder'
+      ? <><button onClick={() => navigate('dashboard')}>Sair do construtor</button><LiveWorkoutBuilderScreen /></>
+      : <button onClick={() => navigate('builder')}>Voltar ao construtor</button>}
+  </>
+}
+
 beforeEach(() => {
   vi.clearAllMocks()
   localStorage.clear()
@@ -139,6 +149,61 @@ describe('live workout builder copilot', () => {
     expect(screen.getByDisplayValue('100 kg')).toBeInTheDocument()
     expect(mocks.publishWorkoutVersion).not.toHaveBeenCalled()
     expect(within(dialog).getByRole('heading', { name: /Proposta rejeitada e registrada/i })).toBeInTheDocument()
+  })
+
+  it('restores a per-student session draft after navigation and clears it after publishing', async () => {
+    render(<PrototypeProvider lockedRole="trainer"><DraftRouteHarness /></PrototypeProvider>)
+    expect(await screen.findByDisplayValue('100 kg')).toBeInTheDocument()
+
+    fireEvent.change(screen.getByLabelText('Carga'), { target: { value: '82 kg' } })
+    expect(screen.getByText('rascunhos:1')).toBeInTheDocument()
+    expect(screen.getByText('RASCUNHO PRESERVADO')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Sair do construtor' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Voltar ao construtor' }))
+
+    expect(await screen.findByDisplayValue('82 kg')).toBeInTheDocument()
+    expect(mocks.getLatestWorkoutVersion).toHaveBeenCalledTimes(1)
+
+    fireEvent.click(screen.getByRole('button', { name: /^Publicar treino$/i }))
+    await waitFor(() => expect(mocks.publishWorkoutVersion).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ exercises: [expect.objectContaining({ load: '82 kg' })] }),
+    ))
+    await waitFor(() => expect(screen.getByText('rascunhos:0')).toBeInTheDocument())
+  })
+
+  it('keeps independent drafts while the trainer switches between students', async () => {
+    mocks.listEnrolledStudents.mockResolvedValue([
+      { userId: studentId, displayName: 'Marina Costa', joinedAt: '2026-08-01T12:00:00.000Z' },
+      { userId: secondStudentId, displayName: 'Bianca Souza', joinedAt: '2026-08-02T12:00:00.000Z' },
+    ])
+    mocks.getLatestWorkoutVersion.mockImplementation(async (_scope, activeStudentId) => activeStudentId === secondStudentId ? {
+      id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', workspaceId, studentUserId: secondStudentId,
+      publishedByUserId: trainerId, publishedByRole: 'trainer', versionNumber: 1,
+      title: 'Superiores', publishedAt: '2026-08-06T12:00:00.000Z',
+      exercises: [{ id: 'row', name: 'Remada', muscle: 'Costas', sets: '3', reps: '12', load: '30 kg', rest: '60s', tempo: '2-0-2', rir: '2', note: '' }],
+    } : {
+      id: '55555555-5555-4555-8555-555555555555', workspaceId, studentUserId: studentId,
+      publishedByUserId: trainerId, publishedByRole: 'trainer', versionNumber: 1,
+      title: 'Inferiores', publishedAt: '2026-08-06T12:00:00.000Z',
+      exercises: [{ id: 'leg', name: 'Leg press', muscle: 'Quadríceps', sets: '4', reps: '10', load: '100 kg', rest: '60s', tempo: '2-0-2', rir: '2', note: '' }],
+    })
+
+    render(<PrototypeProvider lockedRole="trainer"><DraftRouteHarness /></PrototypeProvider>)
+    expect(await screen.findByDisplayValue('100 kg')).toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText('Carga'), { target: { value: '82 kg' } })
+
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: secondStudentId } })
+    expect(await screen.findByDisplayValue('30 kg')).toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText('Carga'), { target: { value: '24 kg' } })
+    expect(screen.getByText('rascunhos:2')).toBeInTheDocument()
+
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: studentId } })
+    expect(await screen.findByDisplayValue('82 kg')).toBeInTheDocument()
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: secondStudentId } })
+    expect(await screen.findByDisplayValue('24 kg')).toBeInTheDocument()
+    expect(mocks.getLatestWorkoutVersion).toHaveBeenCalledTimes(2)
   })
 
   it('discards a late proposal after the trainer changes the active student', async () => {
