@@ -27,6 +27,13 @@ import './live-training.css'
 type DraftAnswers = Record<string, string | string[]>
 type LoadPhase = 'loading' | 'ready' | 'error'
 
+type StudentPainResolution = {
+  reportId: string
+  region: string
+  note: string
+  resolvedAt: string
+}
+
 type WorkoutCompletionSnapshot = StudentWorkoutCompletionSnapshot & {
   sessionKey: string
   scopeKey: string
@@ -112,29 +119,51 @@ export function LiveStudentTodayScreen() {
   const { navigate } = usePrototype()
   const auth = useAuth()
   const scope = studentScope(auth.membership, auth.profile)
+  const scopeIdentity = scope ? `${scope.workspaceId}:${scope.userId}` : ''
+  const activeScopeIdentityRef = useRef(scopeIdentity)
+  activeScopeIdentityRef.current = scopeIdentity
   const [workout, setWorkout] = useState<WorkoutVersion | null>(null)
   const [assignment, setAssignment] = useState<AnamnesisAssignment | null>(null)
   const [submission, setSubmission] = useState<AnamnesisSubmission | null>(null)
   const [reports, setReports] = useState<PainReportSummary[]>([])
+  const [painResolutions, setPainResolutions] = useState<StudentPainResolution[]>([])
   const [nutrition, setNutrition] = useState<NutritionDashboard | null>(null)
   const [nutritionUnavailable, setNutritionUnavailable] = useState(false)
   const [sessions, setSessions] = useState<ScheduleSession[]>([])
   const [slots, setSlots] = useState<ScheduleSlot[]>([])
   const [scheduleUnavailable, setScheduleUnavailable] = useState(false)
   const [phase, setPhase] = useState<LoadPhase>('loading')
+  const [loadedScopeIdentity, setLoadedScopeIdentity] = useState('')
   const [error, setError] = useState('')
+  const todayRequestVersion = useRef(0)
 
   const load = async () => {
-    if (!scope) return
-    setPhase('loading'); setError('')
+    const requestVersion = ++todayRequestVersion.current
+    const requestScope = scope
+    const requestScopeIdentity = scopeIdentity
+    setWorkout(null)
+    setAssignment(null)
+    setSubmission(null)
+    setReports([])
+    setPainResolutions([])
+    setNutrition(null)
+    setNutritionUnavailable(false)
+    setSessions([])
+    setSlots([])
+    setScheduleUnavailable(false)
+    setLoadedScopeIdentity('')
+    setPhase('loading')
+    setError('')
+    if (!requestScope || !requestScopeIdentity) return
     try {
       const operations = createOperationsService()
+      const signals = createSignalService()
       const [core, nutritionResult, scheduleResult] = await Promise.all([
         Promise.all([
-          getLatestWorkoutVersion(scope),
-          getLatestAnamnesisAssignment(scope),
-          listAnamnesisSubmissions(scope, undefined, { limit: 50 }),
-          createSignalService().listOwnReports({ limit: 20 }),
+          getLatestWorkoutVersion(requestScope),
+          getLatestAnamnesisAssignment(requestScope),
+          listAnamnesisSubmissions(requestScope, undefined, { limit: 50 }),
+          signals.listOwnReports({ limit: 20 }),
         ]),
         createNutritionService().loadDashboard()
           .then((value) => ({ value, unavailable: false }))
@@ -146,22 +175,52 @@ export function LiveStudentTodayScreen() {
           .catch(() => ({ sessions: [], slots: [], unavailable: true })),
       ])
       const [nextWorkout, nextAssignment, submissionPage, reportPage] = core
+      if (reportPage.items.some((report) =>
+        report.workspaceId !== requestScope.workspaceId || report.studentUserId !== requestScope.userId)) {
+        throw new Error('Não foi possível validar as atualizações dos seus relatos.')
+      }
+      const timelines = await Promise.all(reportPage.items.map(async (report) => ({
+        report,
+        events: (await signals.listPainReportTimeline(report.id, { limit: 50 })).items,
+      })))
+      const nextPainResolutions = timelines.flatMap<StudentPainResolution>(({ report, events }) => {
+        if (events.some((event) =>
+          event.painReportId !== report.id
+          || event.workspaceId !== requestScope.workspaceId
+          || event.studentUserId !== requestScope.userId)) {
+          throw new Error('Não foi possível validar as atualizações dos seus relatos.')
+        }
+        const resolution = [...events].reverse().find((event) => event.action === 'resolved' && Boolean(event.note?.trim()))
+        return resolution?.note
+          ? [{ reportId: report.id, region: report.region, note: resolution.note.trim(), resolvedAt: resolution.createdAt }]
+          : []
+      }).sort((left, right) => Date.parse(right.resolvedAt) - Date.parse(left.resolvedAt))
+      if (requestVersion !== todayRequestVersion.current || requestScopeIdentity !== activeScopeIdentityRef.current) return
       setWorkout(nextWorkout)
       setAssignment(nextAssignment)
       setSubmission(nextAssignment ? submissionPage.items.find((item) => item.assignmentId === nextAssignment.id) ?? null : null)
       setReports(reportPage.items)
+      setPainResolutions(nextPainResolutions)
       setNutrition(nutritionResult.value)
       setNutritionUnavailable(nutritionResult.unavailable)
       setSessions(scheduleResult.sessions)
       setSlots(scheduleResult.slots)
       setScheduleUnavailable(scheduleResult.unavailable)
+      setLoadedScopeIdentity(requestScopeIdentity)
       setPhase('ready')
     } catch (cause) {
-      setPhase('error'); setError(cause instanceof Error ? cause.message : 'Não foi possível carregar seu resumo.')
+      if (requestVersion !== todayRequestVersion.current || requestScopeIdentity !== activeScopeIdentityRef.current) return
+      setLoadedScopeIdentity(requestScopeIdentity)
+      setPhase('error')
+      setError(cause instanceof Error ? cause.message : 'Não foi possível carregar seu resumo.')
     }
   }
-  useEffect(() => { void load() }, [scope?.workspaceId, scope?.userId])
-  if (phase === 'loading') return <div className="page enter"><div className="live-loading"><LoaderCircle className="spin" size={24} /><p>Organizando seu dia...</p></div></div>
+  useEffect(() => {
+    void load()
+    return () => { todayRequestVersion.current += 1 }
+  }, [scope?.workspaceId, scope?.userId])
+  if (!scope) return <div className="page enter"><div className="empty-state"><ShieldCheck size={29} /><h3>Resumo indisponível.</h3><p>Entre com uma conta de aluno ativa para abrir este espaço protegido.</p></div></div>
+  if (phase === 'loading' || loadedScopeIdentity !== scopeIdentity) return <div className="page enter"><div className="live-loading"><LoaderCircle className="spin" size={24} /><p>Organizando seu dia...</p></div></div>
   if (phase === 'error') return <div className="page enter"><LoadFailure message={error} onRetry={() => void load()} /></div>
 
   const displayName = auth.profile?.displayName ?? 'Aluno'
@@ -198,7 +257,8 @@ export function LiveStudentTodayScreen() {
     <section className="today-grid"><button className="today-workout" onClick={() => navigate('workout')}><div className="workout-orbit"><strong>{workout ? `V${workout.versionNumber}` : '—'}</strong><small>{workout ? 'PUBLICADA' : 'AGUARDANDO'}</small><i style={{ '--progress': workout ? '360deg' : '0deg' } as React.CSSProperties} /></div><div><Eyebrow>{workout ? 'SEU TREINO ATUAL' : 'PRIMEIRA PRESCRIÇÃO'}</Eyebrow><h3>{workout?.title ?? 'Seu professor ainda está preparando o treino'}</h3><p>{workout ? `${workout.exercises.length} exercícios · versão imutável` : 'Você será avisado quando a primeira versão for publicada.'}</p><span>{workout ? 'Abrir treino' : 'Ver status'} <ChevronRight size={16} /></span></div><span className="today-number">01</span></button>
       <div className="today-side"><button onClick={() => navigate('assistant')}><span className="today-icon danger"><HeartPulse size={20} /></span><div><Eyebrow>COMO VOCÊ ESTÁ?</Eyebrow><h3>Algo doeu ou atrapalhou?</h3><p>{reports.length ? `${reports.length} sinais registrados por você.` : 'Conte em menos de um minuto.'}</p></div><ChevronRight size={18} /></button><button onClick={() => navigate('schedule')}><span className="today-icon blue"><CalendarDays size={20} /></span><div><Eyebrow>{nextSchedule?.session.state === 'confirmed' ? 'PRÓXIMA SESSÃO' : 'AGENDA COMPARTILHADA'}</Eyebrow><h3>{nextScheduleTitle}</h3><p>{nextScheduleCopy}</p></div><ChevronRight size={18} /></button></div>
     </section>
-    <section className="student-lower"><div><SectionTitleCompat index="02" title="Para você agora" /><div className="student-task-list"><button onClick={() => navigate('student-form')}><span className={formDone ? 'task-check done' : 'task-check'}>{formDone ? <Check size={16} /> : <FileCheck2 size={16} />}</span><span><strong>{assignment?.title ?? 'Nenhuma anamnese pendente'}</strong><small>{formDone ? 'Respostas registradas com consentimento' : assignment ? `${trainerFirstName} enviou perguntas para você` : 'Seu histórico está em dia'}</small></span><span className={`tag ${formDone || !assignment ? 'success' : 'warning'}`}>{formDone ? 'Concluída' : assignment ? 'Pendente' : 'Em dia'}</span></button><button onClick={() => navigate('nutrition')}><span className={nutrition?.plan && !nutritionUnavailable ? 'task-check done' : 'task-check'}>{nutrition?.plan && !nutritionUnavailable ? <Check size={16} /> : <Salad size={16} />}</span><span><strong>{nutritionTitle}</strong><small>{nutritionCopy}</small></span><ChevronRight size={16} /></button><button onClick={() => navigate('messages')}><span className="task-check"><MessageCircle size={16} /></span><span><strong>Conversa com {trainerFirstName}</strong><small>Canal privado do seu acompanhamento</small></span><ChevronRight size={16} /></button></div></div>
+    {painResolutions.length > 0 && <section className="student-pain-updates" aria-label="Retorno do seu professor"><SectionTitleCompat index="02" title="Retorno do seu professor" /><div className="student-pain-update-list">{painResolutions.map((resolution) => <article key={resolution.reportId}><span className="student-pain-update-icon"><CheckCircle2 size={20} /></span><div><Eyebrow>RELATO REVISTO · {new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: 'short' }).format(new Date(resolution.resolvedAt)).replace('.', '').toUpperCase()}</Eyebrow><h3>{resolution.region}</h3><p>{resolution.note}</p><small>Esta atualização fica visível no seu histórico protegido.</small></div></article>)}</div></section>}
+    <section className="student-lower"><div><SectionTitleCompat index={painResolutions.length ? '03' : '02'} title="Para você agora" /><div className="student-task-list"><button onClick={() => navigate('student-form')}><span className={formDone ? 'task-check done' : 'task-check'}>{formDone ? <Check size={16} /> : <FileCheck2 size={16} />}</span><span><strong>{assignment?.title ?? 'Nenhuma anamnese pendente'}</strong><small>{formDone ? 'Respostas registradas com consentimento' : assignment ? `${trainerFirstName} enviou perguntas para você` : 'Seu histórico está em dia'}</small></span><span className={`tag ${formDone || !assignment ? 'success' : 'warning'}`}>{formDone ? 'Concluída' : assignment ? 'Pendente' : 'Em dia'}</span></button><button onClick={() => navigate('nutrition')}><span className={nutrition?.plan && !nutritionUnavailable ? 'task-check done' : 'task-check'}>{nutrition?.plan && !nutritionUnavailable ? <Check size={16} /> : <Salad size={16} />}</span><span><strong>{nutritionTitle}</strong><small>{nutritionCopy}</small></span><ChevronRight size={16} /></button><button onClick={() => navigate('messages')}><span className="task-check"><MessageCircle size={16} /></span><span><strong>Conversa com {trainerFirstName}</strong><small>Canal privado do seu acompanhamento</small></span><ChevronRight size={16} /></button></div></div>
       <aside className="continuity-card"><Eyebrow>SEU ELO REAL</Eyebrow><strong>{reports.length}</strong><span>{reports.length === 1 ? 'sinal compartilhado' : 'sinais compartilhados'}</span><p>Consistência também é registrar contexto e adaptar quando o corpo pede.</p><Button variant="secondary" onClick={() => void load()}>Atualizar resumo</Button></aside>
     </section>
   </div>
