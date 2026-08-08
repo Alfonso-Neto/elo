@@ -514,13 +514,31 @@ export function LiveFormBuilderScreen() {
   const [decidingSuggestion, setDecidingSuggestion] = useState(false)
   const assignmentKey = useRef('')
   const assistantKey = useRef('')
-  const changed = () => { assignmentKey.current = ''; setSent(false); setError('') }
+  const assistantRequestVersion = useRef(0)
+  const clearSuggestionReview = () => {
+    assistantRequestVersion.current += 1
+    assistantKey.current = ''
+    setAssistantOpen(false)
+    setAssistantPhase('idle')
+    setAssistantError('')
+    setAssistantProposal(null)
+    setAssistantProposalId('')
+    setSelectedSuggestions([])
+    setDecidingSuggestion(false)
+  }
+  const changed = () => { assignmentKey.current = ''; setSent(false); setError(''); clearSuggestionReview() }
+  useEffect(() => {
+    assignmentKey.current = ''
+    clearSuggestionReview()
+  }, [target.selectedStudentId])
+  useEffect(() => () => { assistantRequestVersion.current += 1 }, [])
   const update = (id: string, patch: Partial<FormQuestion>) => { changed(); setFormQuestions((items) => items.map((item) => item.id === id ? { ...item, ...patch } : item)) }
   const add = (question?: Partial<FormQuestion>) => { changed(); setFormQuestions((items) => [...items, { id: `q-${Date.now()}-${items.length}`, label: question?.label ?? '', type: question?.type ?? 'text', options: question?.options, required: question?.required ?? false }]) }
   const move = (index: number, direction: number) => { changed(); setFormQuestions((items) => { const next = [...items]; const destination = index + direction; if (destination < 0 || destination >= next.length) return items; [next[index], next[destination]] = [next[destination], next[index]]; return next }) }
   const valid = Boolean(formTitle.trim()) && formQuestions.length > 0 && formQuestions.every((question) => question.label.trim() && (!['single','multi'].includes(question.type) || Boolean(question.options?.length && question.options.every((option) => option.trim()))))
   const requestSuggestions = async () => {
     if (!target.scope || !target.student || assistantPhase === 'loading') return
+    const requestVersion = ++assistantRequestVersion.current
     const key = assistantKey.current || createIdempotencyKey('form-question-copilot')
     assistantKey.current = key
     setAssistantOpen(true); setAssistantPhase('loading'); setAssistantError('')
@@ -532,6 +550,7 @@ export function LiveFormBuilderScreen() {
         existingQuestions: formQuestions.map((question) => question.label).filter((label) => label.trim()),
         idempotencyKey: key,
       })
+      if (requestVersion !== assistantRequestVersion.current) return
       if (result.state === 'processing') {
         setAssistantPhase('processing')
         return
@@ -541,6 +560,7 @@ export function LiveFormBuilderScreen() {
       setSelectedSuggestions(result.proposal.questions.map((question) => question.id))
       setAssistantPhase('ready')
     } catch (cause) {
+      if (requestVersion !== assistantRequestVersion.current) return
       setAssistantPhase('error')
       setAssistantError(cause instanceof Error ? cause.message : 'O Copiloto não conseguiu revisar este formulário agora.')
     }
@@ -551,6 +571,7 @@ export function LiveFormBuilderScreen() {
   }
   const decideSuggestions = async (decision: 'accepted' | 'rejected') => {
     if (!assistantProposalId || !assistantProposal || decidingSuggestion) return
+    const requestVersion = assistantRequestVersion.current
     setDecidingSuggestion(true); setAssistantError('')
     try {
       await createAssistantService().decideProposal({
@@ -558,6 +579,7 @@ export function LiveFormBuilderScreen() {
         decision,
         note: decision === 'accepted' ? 'Perguntas selecionadas para revisão no construtor.' : 'Sugestões descartadas no construtor.',
       })
+      if (requestVersion !== assistantRequestVersion.current) return
       if (decision === 'accepted') {
         const existing = new Set(formQuestions.map((question) => question.label.trim().toLocaleLowerCase('pt-BR')))
         const mapped: FormQuestion[] = []
@@ -567,6 +589,9 @@ export function LiveFormBuilderScreen() {
           existing.add(normalized)
           mapped.push({ id: `ai-${crypto.randomUUID()}`, label: question.question.trim(), type: question.answer_type === 'yes_no' ? 'yesno' : question.answer_type === 'scale_0_10' ? 'scale' : 'text', required: false })
         }
+        assignmentKey.current = ''
+        setSent(false)
+        setError('')
         setFormQuestions((items) => [...items, ...mapped])
         notify('Sugestões adicionadas ao rascunho', `${mapped.length} ${mapped.length === 1 ? 'pergunta foi incluída' : 'perguntas foram incluídas'} para sua edição. Nada foi enviado ao aluno.`)
       } else {
@@ -575,8 +600,9 @@ export function LiveFormBuilderScreen() {
       assistantKey.current = ''
       setAssistantOpen(false); setAssistantPhase('idle'); setAssistantProposal(null); setAssistantProposalId(''); setSelectedSuggestions([])
     } catch (cause) {
+      if (requestVersion !== assistantRequestVersion.current) return
       setAssistantError(cause instanceof Error ? cause.message : 'Não foi possível registrar sua decisão.')
-    } finally { setDecidingSuggestion(false) }
+    } finally { if (requestVersion === assistantRequestVersion.current) setDecidingSuggestion(false) }
   }
   const send = async () => {
     if (!target.scope || !target.student || !valid || sending) return

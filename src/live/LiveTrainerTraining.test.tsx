@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { AssistantProposal } from '../assistant/assistant-service'
 import { PrototypeProvider, usePrototype } from '../prototype-context'
-import { LiveWorkoutBuilderScreen } from './LiveTrainerTraining'
+import { LiveFormBuilderScreen, LiveWorkoutBuilderScreen } from './LiveTrainerTraining'
 
 const mocks = vi.hoisted(() => ({
   useAuth: vi.fn(),
@@ -10,8 +10,10 @@ const mocks = vi.hoisted(() => ({
   getLatestWorkoutVersion: vi.fn(),
   listWorkoutCompletions: vi.fn(),
   publishWorkoutVersion: vi.fn(),
+  assignAnamnesis: vi.fn(),
   listStudentReports: vi.fn(),
   requestTrainerCopilot: vi.fn(),
+  requestFormQuestionSuggestions: vi.fn(),
   decideProposal: vi.fn(),
 }))
 
@@ -29,11 +31,13 @@ vi.mock('./training', async (importOriginal) => ({
   getLatestWorkoutVersion: mocks.getLatestWorkoutVersion,
   listWorkoutCompletions: mocks.listWorkoutCompletions,
   publishWorkoutVersion: mocks.publishWorkoutVersion,
+  assignAnamnesis: mocks.assignAnamnesis,
 }))
 vi.mock('../assistant/assistant-service', async (importOriginal) => ({
   ...await importOriginal<typeof import('../assistant/assistant-service')>(),
   createAssistantService: () => ({
     requestTrainerCopilot: mocks.requestTrainerCopilot,
+    requestFormQuestionSuggestions: mocks.requestFormQuestionSuggestions,
     decideProposal: mocks.decideProposal,
   }),
 }))
@@ -57,6 +61,27 @@ const proposal: AssistantProposal = {
   sources: [{ kind: 'user_report', label: 'Relato estruturado recente' }],
   uncertainties: ['Não há confirmação clínica sobre a origem do desconforto.'],
   disclaimer: 'Esta proposta apoia a revisão profissional e não substitui avaliação, diagnóstico ou decisão humana.',
+}
+
+function formSuggestionResult(summary: string, question: string, questionId = 'sleep') {
+  return {
+    state: 'complete' as const,
+    runId: '88888888-8888-4888-8888-888888888888',
+    proposalId,
+    completionMode: 'model' as const,
+    reused: false,
+    proposal: {
+      summary,
+      urgency: 'routine' as const,
+      red_flags: [],
+      questions: [{ id: questionId, question, reason: 'Completa uma lacuna do rascunho.', answer_type: 'text' as const }],
+      rationale: ['O rascunho ainda não cobre este contexto.'],
+      workout_changes: [],
+      sources: [{ kind: 'trainer_context' as const, label: 'Título e perguntas do rascunho' }],
+      uncertainties: ['A sugestão depende da revisão do professor.'],
+      disclaimer: 'Sugestão para revisão humana; nada é enviado automaticamente.',
+    },
+  }
 }
 
 function arrangeBuilder() {
@@ -87,6 +112,8 @@ function arrangeBuilder() {
   })
   mocks.decideProposal.mockResolvedValue('99999999-9999-4999-8999-999999999999')
   mocks.publishWorkoutVersion.mockResolvedValue('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa')
+  mocks.assignAnamnesis.mockResolvedValue('cccccccc-cccc-4ccc-8ccc-cccccccccccc')
+  mocks.requestFormQuestionSuggestions.mockResolvedValue(formSuggestionResult('Uma lacuna útil foi encontrada.', 'Como está a qualidade do seu sono?'))
 }
 
 async function openReview() {
@@ -291,5 +318,67 @@ describe('live workout builder copilot', () => {
     await waitFor(() => expect(screen.queryByText(proposal.summary)).not.toBeInTheDocument())
     fireEvent.click(screen.getByRole('button', { name: /Abrir 1 ponto para revisar com o Copiloto/i }))
     expect(screen.getByRole('dialog', { name: /Segundo olhar no rascunho/i })).toHaveTextContent('Quer um segundo olhar sobre este rascunho?')
+  })
+})
+
+describe('live anamnesis builder copilot', () => {
+  it('discards a suggestion generated for an older form draft', async () => {
+    let resolveFirst!: (value: ReturnType<typeof formSuggestionResult>) => void
+    mocks.requestFormQuestionSuggestions
+      .mockReturnValueOnce(new Promise<ReturnType<typeof formSuggestionResult>>((resolve) => { resolveFirst = resolve }))
+      .mockResolvedValueOnce(formSuggestionResult('Sugestão do rascunho atual.', 'Como está sua recuperação hoje?', 'recovery'))
+
+    render(<PrototypeProvider lockedRole="trainer"><LiveFormBuilderScreen /></PrototypeProvider>)
+    expect(await screen.findByDisplayValue('Nova anamnese')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /Revisar lacunas/i }))
+    await waitFor(() => expect(mocks.requestFormQuestionSuggestions).toHaveBeenCalledTimes(1))
+    fireEvent.click(screen.getByRole('button', { name: 'Fechar' }))
+
+    fireEvent.change(screen.getByLabelText('TÍTULO DO FORMULÁRIO'), { target: { value: 'Check-in de recuperação' } })
+    fireEvent.click(screen.getByRole('button', { name: /Revisar lacunas/i }))
+    expect(await screen.findByText('Sugestão do rascunho atual.')).toBeInTheDocument()
+
+    await act(async () => {
+      resolveFirst(formSuggestionResult('Sugestão antiga que deve ser descartada.', 'Pergunta antiga', 'old'))
+      await Promise.resolve()
+    })
+
+    expect(screen.queryByText('Sugestão antiga que deve ser descartada.')).not.toBeInTheDocument()
+    expect(screen.getByText('Sugestão do rascunho atual.')).toBeInTheDocument()
+    expect(mocks.requestFormQuestionSuggestions.mock.calls[0][0].idempotencyKey).not.toBe(mocks.requestFormQuestionSuggestions.mock.calls[1][0].idempotencyKey)
+  })
+
+  it('reuses one suggestion key while a processing review is checked again unchanged', async () => {
+    mocks.requestFormQuestionSuggestions
+      .mockResolvedValueOnce({ state: 'processing', runId: '88888888-8888-4888-8888-888888888888' })
+      .mockResolvedValueOnce(formSuggestionResult('Revisão concluída sem mudar o rascunho.', 'Como está sua disposição?'))
+
+    render(<PrototypeProvider lockedRole="trainer"><LiveFormBuilderScreen /></PrototypeProvider>)
+    expect(await screen.findByDisplayValue('Nova anamnese')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /Revisar lacunas/i }))
+    expect(await screen.findByText(/revisão ainda está sendo preparada/i)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /Verificar novamente/i }))
+    expect(await screen.findByText('Revisão concluída sem mudar o rascunho.')).toBeInTheDocument()
+
+    expect(mocks.requestFormQuestionSuggestions).toHaveBeenCalledTimes(2)
+    expect(mocks.requestFormQuestionSuggestions.mock.calls[0][0].idempotencyKey).toBe(mocks.requestFormQuestionSuggestions.mock.calls[1][0].idempotencyKey)
+  })
+
+  it('renews a failed assignment key after accepted suggestions change the payload', async () => {
+    mocks.assignAnamnesis.mockRejectedValueOnce(new Error('Falha temporária no envio.'))
+
+    render(<PrototypeProvider lockedRole="trainer"><LiveFormBuilderScreen /></PrototypeProvider>)
+    expect(await screen.findByDisplayValue('Nova anamnese')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /^Enviar$/i }))
+    expect(await screen.findByText('Falha temporária no envio.')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /Revisar lacunas/i }))
+    expect(await screen.findByText('Uma lacuna útil foi encontrada.')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /Adicionar 1 ao rascunho/i }))
+    expect(await screen.findByDisplayValue('Como está a qualidade do seu sono?')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /^Enviar$/i }))
+    await waitFor(() => expect(mocks.assignAnamnesis).toHaveBeenCalledTimes(2))
+    expect(mocks.assignAnamnesis.mock.calls[0][1].idempotencyKey).not.toBe(mocks.assignAnamnesis.mock.calls[1][1].idempotencyKey)
   })
 })
