@@ -56,3 +56,9 @@ export type NutritionDashboard = {
   mealEvents: NutritionMealEvent[]
   hydrationEvents: NutritionHydrationEvent[]
 }
+
+export type TrainerNutritionDashboard = {
+  plan: NutritionPlan | null
+  mealEvents: NutritionMealEvent[]
+  hydrationEvents: NutritionHydrationEvent[]
+}

@@ -12,6 +12,7 @@ const otherWorkspaceId = '33333333-3333-4333-8333-333333333333'
 const planId = '44444444-4444-4444-8444-444444444444'
 const mealEventId = '55555555-5555-4555-8555-555555555555'
 const hydrationEventId = '66666666-6666-4666-8666-666666666666'
+const trainerId = '77777777-7777-4777-8777-777777777777'
 const today = nutritionToday()
 const key = (prefix: string) => `${prefix}:e1f2a3b4-5c6d-47e8-9f01-23456789abcd`
 const ok = (data: unknown) => ({ data, error: null })
@@ -65,6 +66,8 @@ function fakeBoundary(overrides: Partial<NutritionBoundary> = {}) {
   const value: NutritionBoundary = {
     currentUser: vi.fn(async () => ok({ id: studentId })),
     activeMemberships: vi.fn(async () => ok([membership()])),
+    professionalMemberships: vi.fn(async () => ok([])),
+    linkedStudent: vi.fn(async () => ok([])),
     latestConsent: vi.fn(async () => ok([])),
     currentPlan: vi.fn(async () => ok([])),
     mealEvents: vi.fn(async () => ok([])),
@@ -127,6 +130,64 @@ describe('nutrition scoped read contract', () => {
       mealEvents: vi.fn(async () => ok([mealEvent({ plan_version_id: '77777777-7777-4777-8777-777777777777' })])),
     })
     await expect(createNutritionService(value).loadDashboard()).rejects.toMatchObject({ code: 'unavailable' })
+  })
+})
+
+describe('trainer nutrition read-only contract', () => {
+  it('loads a linked student plan through the consent-enforcing read policies', async () => {
+    const professionalMemberships = vi.fn(async () => ok([{
+      workspace_id: workspaceId, user_id: trainerId, role: 'trainer', status: 'active',
+    }]))
+    const linkedStudent = vi.fn(async () => ok([membership()]))
+    const { value } = fakeBoundary({
+      currentUser: vi.fn(async () => ok({ id: trainerId })),
+      professionalMemberships,
+      linkedStudent,
+      currentPlan: vi.fn(async () => ok([plan()])),
+      mealEvents: vi.fn(async () => ok([mealEvent()])),
+      hydrationEvents: vi.fn(async () => ok([hydrationEvent()])),
+    })
+
+    await expect(createNutritionService(value).loadTrainerStudentDashboard(studentId)).resolves.toMatchObject({
+      plan: { id: planId, workspaceId, studentUserId: studentId },
+      mealEvents: [{ mealId: 'breakfast' }],
+      hydrationEvents: [{ totalMl: 1000 }],
+    })
+    expect(professionalMemberships).toHaveBeenCalledWith(trainerId)
+    expect(linkedStudent).toHaveBeenCalledWith(workspaceId, studentId)
+    expect(value.currentPlan).toHaveBeenCalledWith(workspaceId, studentId, today)
+    expect(value.latestConsent).not.toHaveBeenCalled()
+  })
+
+  it('returns no plan when RLS withholds nutrition and never requests tracking rows', async () => {
+    const { value } = fakeBoundary({
+      currentUser: vi.fn(async () => ok({ id: trainerId })),
+      professionalMemberships: vi.fn(async () => ok([{
+        workspace_id: workspaceId, user_id: trainerId, role: 'owner', status: 'active',
+      }])),
+      linkedStudent: vi.fn(async () => ok([membership()])),
+    })
+    await expect(createNutritionService(value).loadTrainerStudentDashboard(studentId)).resolves.toEqual({
+      plan: null, mealEvents: [], hydrationEvents: [],
+    })
+    expect(value.mealEvents).not.toHaveBeenCalled()
+    expect(value.hydrationEvents).not.toHaveBeenCalled()
+  })
+
+  it('rejects malformed subjects and cross-workspace membership rows before plan reads', async () => {
+    const malformed = fakeBoundary()
+    await expect(createNutritionService(malformed.value).loadTrainerStudentDashboard('student-one')).rejects.toMatchObject({ code: 'validation' })
+    expect(malformed.value.currentUser).not.toHaveBeenCalled()
+
+    const crossed = fakeBoundary({
+      currentUser: vi.fn(async () => ok({ id: trainerId })),
+      professionalMemberships: vi.fn(async () => ok([{
+        workspace_id: workspaceId, user_id: trainerId, role: 'trainer', status: 'active',
+      }])),
+      linkedStudent: vi.fn(async () => ok([membership(), { ...membership(), workspace_id: otherWorkspaceId }])),
+    })
+    await expect(createNutritionService(crossed.value).loadTrainerStudentDashboard(studentId)).rejects.toMatchObject({ code: 'access' })
+    expect(crossed.value.currentPlan).not.toHaveBeenCalled()
   })
 })
 

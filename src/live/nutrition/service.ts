@@ -7,6 +7,7 @@ import type {
   NutritionMeal,
   NutritionMealEvent,
   NutritionPlan,
+  TrainerNutritionDashboard,
 } from './types'
 import {
   nutritionDatePattern,
@@ -22,6 +23,8 @@ type BackendResult = { data: unknown; error: unknown }
 export type NutritionBoundary = {
   currentUser: () => Promise<BackendResult>
   activeMemberships: (userId: string) => Promise<BackendResult>
+  professionalMemberships: (userId: string) => Promise<BackendResult>
+  linkedStudent: (workspaceId: string, studentUserId: string) => Promise<BackendResult>
   latestConsent: (workspaceId: string, studentUserId: string) => Promise<BackendResult>
   currentPlan: (workspaceId: string, studentUserId: string, today: string) => Promise<BackendResult>
   mealEvents: (workspaceId: string, studentUserId: string, planVersionId: string, today: string) => Promise<BackendResult>
@@ -65,6 +68,19 @@ const defaultBoundary: NutritionBoundary = {
     const { data, error } = await requireSupabase().from('workspace_members')
       .select('workspace_id, user_id, role, status')
       .eq('user_id', userId).eq('role', 'student').eq('status', 'active').limit(2)
+    return { data, error }
+  },
+  async professionalMemberships(userId) {
+    const { data, error } = await requireSupabase().from('workspace_members')
+      .select('workspace_id, user_id, role, status')
+      .eq('user_id', userId).in('role', ['owner', 'trainer']).eq('status', 'active').limit(2)
+    return { data, error }
+  },
+  async linkedStudent(workspaceId, studentUserId) {
+    const { data, error } = await requireSupabase().from('workspace_members')
+      .select('workspace_id, user_id, role, status')
+      .eq('workspace_id', workspaceId).eq('user_id', studentUserId)
+      .eq('role', 'student').eq('status', 'active').limit(1)
     return { data, error }
   },
   async latestConsent(workspaceId, studentUserId) {
@@ -245,6 +261,29 @@ export function createNutritionService(boundary: NutritionBoundary = defaultBoun
     return { workspaceId: uuid(row, 'workspace_id'), userId }
   }
 
+  async function professionalSubject(studentUserId: string) {
+    validateCommandId(studentUserId, 'uuid')
+    const userResult = await boundary.currentUser()
+    if (userResult.error) throw userResult.error
+    if (!record(userResult.data) || typeof userResult.data.id !== 'string' || !nutritionUuidPattern.test(userResult.data.id)) throw new NutritionDomainError('authentication')
+    const userId = userResult.data.id
+    const membershipResult = await boundary.professionalMemberships(userId)
+    if (membershipResult.error) throw membershipResult.error
+    const memberships = rows(membershipResult.data)
+    if (memberships.length === 0) throw new NutritionDomainError('membership')
+    if (memberships.length > 1) throw new NutritionDomainError('ambiguous')
+    const member = memberships[0]
+    if (!record(member) || (member.role !== 'owner' && member.role !== 'trainer') || member.status !== 'active' || member.user_id !== userId) throw new NutritionDomainError('unavailable')
+    const workspaceId = uuid(member, 'workspace_id')
+    const studentResult = await boundary.linkedStudent(workspaceId, studentUserId)
+    if (studentResult.error) throw studentResult.error
+    const students = rows(studentResult.data)
+    if (students.length !== 1) throw new NutritionDomainError('access')
+    const student = students[0]
+    if (!record(student) || student.workspace_id !== workspaceId || student.user_id !== studentUserId || student.role !== 'student' || student.status !== 'active') throw new NutritionDomainError('unavailable')
+    return { workspaceId, userId, studentUserId }
+  }
+
   async function loadDashboard(): Promise<NutritionDashboard> {
     return safely(async () => {
       const scope = await membership()
@@ -279,6 +318,31 @@ export function createNutritionService(boundary: NutritionBoundary = defaultBoun
       if (mealEvents.some((event) => event.workspaceId !== scope.workspaceId || event.studentUserId !== scope.userId || event.planVersionId !== plan.id || event.recordedOn !== today)) throw new NutritionDomainError('unavailable')
       if (hydrationEvents.some((event) => event.workspaceId !== scope.workspaceId || event.studentUserId !== scope.userId || event.planVersionId !== plan.id || event.recordedOn !== today)) throw new NutritionDomainError('unavailable')
       return { consent, plan, mealEvents, hydrationEvents }
+    })
+  }
+
+  async function loadTrainerStudentDashboard(studentUserId: string): Promise<TrainerNutritionDashboard> {
+    return safely(async () => {
+      const scope = await professionalSubject(studentUserId)
+      const today = nutritionToday()
+      const planResult = await boundary.currentPlan(scope.workspaceId, scope.studentUserId, today)
+      if (planResult.error) throw planResult.error
+      const planRows = rows(planResult.data)
+      if (planRows.length > 1) throw new NutritionDomainError('unavailable')
+      const plan = planRows.length ? parsePlan(planRows[0]) : null
+      if (plan && (plan.workspaceId !== scope.workspaceId || plan.studentUserId !== scope.studentUserId)) throw new NutritionDomainError('unavailable')
+      if (!plan) return { plan: null, mealEvents: [], hydrationEvents: [] }
+      const [mealResult, hydrationResult] = await Promise.all([
+        boundary.mealEvents(scope.workspaceId, scope.studentUserId, plan.id, today),
+        boundary.hydrationEvents(scope.workspaceId, scope.studentUserId, plan.id, today),
+      ])
+      if (mealResult.error) throw mealResult.error
+      if (hydrationResult.error) throw hydrationResult.error
+      const mealEvents = rows(mealResult.data).map(parseMealEvent)
+      const hydrationEvents = rows(hydrationResult.data).map(parseHydrationEvent)
+      if (mealEvents.some((event) => event.workspaceId !== scope.workspaceId || event.studentUserId !== scope.studentUserId || event.planVersionId !== plan.id || event.recordedOn !== today)) throw new NutritionDomainError('unavailable')
+      if (hydrationEvents.some((event) => event.workspaceId !== scope.workspaceId || event.studentUserId !== scope.studentUserId || event.planVersionId !== plan.id || event.recordedOn !== today)) throw new NutritionDomainError('unavailable')
+      return { plan, mealEvents, hydrationEvents }
     })
   }
 
@@ -321,6 +385,7 @@ export function createNutritionService(boundary: NutritionBoundary = defaultBoun
 
   return {
     loadDashboard,
+    loadTrainerStudentDashboard,
     grantConsent: (idempotencyKey: string) => recordConsent('granted', idempotencyKey),
     withdrawConsent: (idempotencyKey: string) => recordConsent('withdrawn', idempotencyKey),
     recordMealState,
