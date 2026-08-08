@@ -50,68 +50,145 @@ export function LiveStudentDetailScreen() {
   const [noteDraft, setNoteDraft] = useState('')
   const [noteError, setNoteError] = useState('')
   const [savingNote, setSavingNote] = useState(false)
+  const [loadedTargetIdentity, setLoadedTargetIdentity] = useState('')
   const noteKey = useRef('')
-  const scope = useMemo<TrainingScope | null>(() => membership && profile ? { workspaceId: membership.workspaceId, userId: profile.id, role: 'trainer' } : null, [membership, profile])
+  const selectedStudentRef = useRef(selectedStudentId)
+  const rosterRequestVersion = useRef(0)
+  const detailRequestVersion = useRef(0)
+  const noteRequestVersion = useRef(0)
+  selectedStudentRef.current = selectedStudentId
+  const scope = useMemo<TrainingScope | null>(() => (
+    membership && profile?.accountRole === 'trainer' && membership.membershipRole !== 'student'
+      ? { workspaceId: membership.workspaceId, userId: profile.id, role: 'trainer' }
+      : null
+  ), [membership?.membershipRole, membership?.workspaceId, profile?.accountRole, profile?.id])
   const student = students.find((item) => item.userId === selectedStudentId) ?? null
+  const scopeIdentity = scope ? `${scope.workspaceId}:${scope.userId}` : ''
+  const targetIdentity = scope && student ? `${scope.workspaceId}:${scope.userId}:${student.userId}` : ''
+  const activeScopeIdentityRef = useRef(scopeIdentity)
+  const activeTargetIdentityRef = useRef(targetIdentity)
+  activeScopeIdentityRef.current = scopeIdentity
+  activeTargetIdentityRef.current = targetIdentity
+
+  const clearStudentContext = useCallback(() => {
+    setReports([])
+    setWorkout(null)
+    setCompletions([])
+    setAssignments([])
+    setSubmissions([])
+    setNotes([])
+    setNutrition(null)
+    setNutritionUnavailable(false)
+    setLoadedTargetIdentity('')
+  }, [])
 
   const loadRoster = useCallback(async () => {
-    setPhase('loading'); setError('')
+    const requestVersion = ++rosterRequestVersion.current
+    const requestScopeIdentity = scope ? `${scope.workspaceId}:${scope.userId}` : ''
+    detailRequestVersion.current += 1
+    setStudents([])
+    clearStudentContext()
+    setPhase('loading')
+    setError('')
+    if (!scope) return
     try {
       const next = await listEnrolledStudents()
+      if (requestVersion !== rosterRequestVersion.current || requestScopeIdentity !== activeScopeIdentityRef.current) return
+      const preferred = selectedStudentRef.current
+      const resolved = next.some((item) => item.userId === preferred) ? preferred : next[0]?.userId ?? ''
       setStudents(next)
-      if (!next.some((item) => item.userId === selectedStudentId)) setSelectedStudentId(next[0]?.userId ?? '')
+      if (resolved !== preferred) setSelectedStudentId(resolved)
       if (!next.length) setPhase('ready')
     } catch (cause) {
-      setPhase('error'); setError(cause instanceof Error ? cause.message : 'Não foi possível carregar os alunos.')
+      if (requestVersion !== rosterRequestVersion.current || requestScopeIdentity !== activeScopeIdentityRef.current) return
+      setPhase('error')
+      setError(cause instanceof Error ? cause.message : 'Não foi possível carregar os alunos.')
     }
-  }, [selectedStudentId, setSelectedStudentId])
-  useEffect(() => { void loadRoster() }, [loadRoster])
+  }, [clearStudentContext, scope, setSelectedStudentId])
+  useEffect(() => {
+    void loadRoster()
+    return () => { rosterRequestVersion.current += 1 }
+  }, [loadRoster])
 
   const loadStudent = useCallback(async () => {
+    const requestVersion = ++detailRequestVersion.current
+    clearStudentContext()
+    setError('')
     if (!scope || !student) return
-    setPhase('loading'); setError('')
+    const scopeSnapshot = { ...scope }
+    const studentUserId = student.userId
+    const requestTargetIdentity = `${scopeSnapshot.workspaceId}:${scopeSnapshot.userId}:${studentUserId}`
+    setPhase('loading')
     try {
       const [core, nutritionResult] = await Promise.all([
         Promise.all([
-          createSignalService().listWorkspaceReports(scope.workspaceId, { limit: MAX_SIGNAL_PAGE_SIZE }),
-          getLatestWorkoutVersion(scope, student.userId),
-          listWorkoutCompletions(scope, student.userId, { limit: 30 }),
-          listAnamnesisAssignments(scope, student.userId, { limit: 30 }),
-          listAnamnesisSubmissions(scope, student.userId, { limit: 30 }),
-          listTrainerStudentNotes(scope, student.userId, { limit: 30 }),
+          createSignalService().listStudentReports(scopeSnapshot.workspaceId, studentUserId, { limit: MAX_SIGNAL_PAGE_SIZE }),
+          getLatestWorkoutVersion(scopeSnapshot, studentUserId),
+          listWorkoutCompletions(scopeSnapshot, studentUserId, { limit: 30 }),
+          listAnamnesisAssignments(scopeSnapshot, studentUserId, { limit: 30 }),
+          listAnamnesisSubmissions(scopeSnapshot, studentUserId, { limit: 30 }),
+          listTrainerStudentNotes(scopeSnapshot, studentUserId, { limit: 30 }),
         ]),
-        createNutritionService().loadTrainerStudentDashboard(student.userId)
+        createNutritionService().loadTrainerStudentDashboard(studentUserId)
           .then((value) => ({ value, unavailable: false }))
           .catch(() => ({ value: null, unavailable: true })),
       ])
+      if (requestVersion !== detailRequestVersion.current || requestTargetIdentity !== activeTargetIdentityRef.current) return
       const [reportPage, latestWorkout, completionPage, assignmentPage, submissionPage, notePage] = core
-      setReports(reportPage.items.filter((item) => item.studentUserId === student.userId))
+      setReports(reportPage.items)
       setWorkout(latestWorkout); setCompletions(completionPage.items); setAssignments(assignmentPage.items); setSubmissions(submissionPage.items); setNotes(notePage.items)
       setNutrition(nutritionResult.value); setNutritionUnavailable(nutritionResult.unavailable)
+      setLoadedTargetIdentity(requestTargetIdentity)
       setPhase('ready')
     } catch (cause) {
-      setPhase('error'); setError(cause instanceof Error ? cause.message : 'Não foi possível carregar este acompanhamento.')
+      if (requestVersion !== detailRequestVersion.current || requestTargetIdentity !== activeTargetIdentityRef.current) return
+      setPhase('error')
+      setError(cause instanceof Error ? cause.message : 'Não foi possível carregar este acompanhamento.')
     }
-  }, [scope, student])
-  useEffect(() => { void loadStudent() }, [loadStudent])
+  }, [clearStudentContext, scope, student])
+  useEffect(() => {
+    void loadStudent()
+    return () => { detailRequestVersion.current += 1 }
+  }, [loadStudent])
+
+  useEffect(() => {
+    noteRequestVersion.current += 1
+    noteKey.current = ''
+    setNoteOpen(false)
+    setNoteDraft('')
+    setNoteError('')
+    setSavingNote(false)
+    return () => { noteRequestVersion.current += 1 }
+  }, [targetIdentity])
 
   const saveNote = async () => {
     if (!scope || !student || !noteDraft.trim() || savingNote) return
+    const requestVersion = ++noteRequestVersion.current
+    const scopeSnapshot = { ...scope }
+    const studentUserId = student.userId
+    const studentName = student.displayName
+    const draftSnapshot = noteDraft
+    const requestTargetIdentity = `${scopeSnapshot.workspaceId}:${scopeSnapshot.userId}:${studentUserId}`
     const key = noteKey.current || createIdempotencyKey('trainer-note')
     noteKey.current = key
     setSavingNote(true); setNoteError('')
     try {
-      await createTrainerStudentNote(scope, { studentUserId: student.userId, note: noteDraft, idempotencyKey: key })
+      await createTrainerStudentNote(scopeSnapshot, { studentUserId, note: draftSnapshot, idempotencyKey: key })
+      if (requestVersion !== noteRequestVersion.current || requestTargetIdentity !== activeTargetIdentityRef.current) return
       setNoteDraft(''); setNoteOpen(false); noteKey.current = ''
-      notify('Observação registrada', 'A nota ficou vinculada ao consentimento vigente e ao histórico profissional.')
+      notify('Observação registrada', `A nota de ${studentName} ficou vinculada ao consentimento vigente e ao histórico profissional.`)
       await loadStudent()
     } catch (cause) {
+      if (requestVersion !== noteRequestVersion.current || requestTargetIdentity !== activeTargetIdentityRef.current) return
       setNoteError(cause instanceof Error ? cause.message : 'Não foi possível registrar a nota.')
-    } finally { setSavingNote(false) }
+    } finally {
+      if (requestVersion === noteRequestVersion.current && requestTargetIdentity === activeTargetIdentityRef.current) setSavingNote(false)
+    }
   }
 
-  if (phase === 'loading') return <div className="page enter"><div className="live-loading"><LoaderCircle className="spin" size={24} /><p>Montando a linha de contexto...</p></div></div>
+  if (!scope) return <div className="page enter"><div className="empty-state"><ShieldCheck size={29} /><h3>Acesso profissional indisponível.</h3><p>Entre novamente com uma conta de professor vinculada para abrir este acompanhamento.</p></div></div>
   if (phase === 'error') return <div className="page enter"><div className="empty-state"><ShieldCheck size={29} /><h3>O acompanhamento não abriu.</h3><p>{error}</p><Button variant="secondary" onClick={() => void (student ? loadStudent() : loadRoster())}>Tentar novamente</Button></div></div>
+  if (phase === 'loading' || (student && loadedTargetIdentity !== targetIdentity)) return <div className="page enter"><div className="live-loading"><LoaderCircle className="spin" size={24} /><p>Montando a linha de contexto...</p></div></div>
   if (!student) return <div className="page enter"><BackButton onClick={() => navigate('students')} label="Voltar para alunos" /><div className="empty-state"><ShieldCheck size={29} /><h3>Nenhum aluno vinculado.</h3><p>Crie um convite para começar um acompanhamento real.</p><Button onClick={() => navigate('students')}>Gerenciar vínculos</Button></div></div>
 
   const submissionIds = new Set(submissions.map((item) => item.assignmentId))
@@ -126,6 +203,6 @@ export function LiveStudentDetailScreen() {
         <div className="quick-stack"><button onClick={() => navigate('forms')}><FileCheck2 size={17} /><span><strong>Anamneses</strong><small>{assignments.filter((item) => !submissionIds.has(item.id)).length} pendentes</small></span><ArrowRight size={16} /></button><button onClick={() => navigate('schedule')}><CalendarDays size={17} /><span><strong>Agendar sessão</strong><small>Abrir agenda compartilhada</small></span><ArrowRight size={16} /></button><button onClick={() => setNoteOpen(true)}><CirclePlus size={17} /><span><strong>Adicionar observação</strong><small>Exige consentimento de saúde vigente</small></span><ArrowRight size={16} /></button></div></aside>
     </div>
     <section className="section-block"><SectionTitle index="03" title="Anamneses enviadas" /><div className="assignment-list">{assignments.map((assignment) => <button key={assignment.id} disabled><span className="person-avatar priority">{initials(student.displayName)}</span><span><strong>{assignment.title}</strong><small>{time(assignment.assignedAt)}</small></span><span className={`tag ${submissionIds.has(assignment.id) ? 'success' : 'warning'}`}>{submissionIds.has(assignment.id) ? 'Concluída' : 'Pendente'}</span></button>)}{!assignments.length && <p className="mini-empty">Nenhuma anamnese enviada.</p>}</div></section>
-    {noteOpen && <Modal title={`Observação sobre ${student.displayName}`} eyebrow="NOTA PROFISSIONAL · DADO SENSÍVEL" onClose={() => !savingNote && setNoteOpen(false)} size="small"><div className="form-stack"><p className="modal-lead">Registre somente o necessário para o acompanhamento. O servidor exige consentimento vigente e restringe a leitura à equipe autorizada.</p><label><span>Observação</span><textarea autoFocus value={noteDraft} onChange={(event) => { noteKey.current = ''; setNoteError(''); setNoteDraft(event.target.value.slice(0,2000)) }} placeholder="Contexto útil para o próximo atendimento..." /></label>{noteError && <p className="form-error" role="alert">{noteError}</p>}<Button className="wide" disabled={!noteDraft.trim() || savingNote} onClick={() => void saveNote()}>{savingNote ? <LoaderCircle className="spin" size={16} /> : <Activity size={16} />} Registrar no histórico</Button></div></Modal>}
+    {noteOpen && <Modal title={`Observação sobre ${student.displayName}`} eyebrow="NOTA PROFISSIONAL · DADO SENSÍVEL" onClose={() => !savingNote && setNoteOpen(false)} size="small"><div className="form-stack"><p className="modal-lead">Registre somente o necessário para o acompanhamento. O servidor exige consentimento vigente e restringe a leitura à equipe autorizada.</p><label><span>Observação</span><textarea autoFocus disabled={savingNote} value={noteDraft} onChange={(event) => { if (savingNote) return; noteKey.current = ''; setNoteError(''); setNoteDraft(event.target.value.slice(0,2000)) }} placeholder="Contexto útil para o próximo atendimento..." /></label>{noteError && <p className="form-error" role="alert">{noteError}</p>}<Button className="wide" disabled={!noteDraft.trim() || savingNote} onClick={() => void saveNote()}>{savingNote ? <LoaderCircle className="spin" size={16} /> : <Activity size={16} />} Registrar no histórico</Button></div></Modal>}
   </div>
 }
