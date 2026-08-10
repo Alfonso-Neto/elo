@@ -211,3 +211,46 @@ Deno.test("adversarial: proposal red flags cannot coexist with routine unsafe wo
     "semantic red-flag invariant must reject unsafe output",
   );
 });
+
+Deno.test("adversarial: proposal identifiers and display text are unique and safe", () => {
+  const duplicated = safeModelProposal();
+  duplicated.questions.push({ ...duplicated.questions[0] });
+  assert(
+    !validateAssistantProposal(duplicated),
+    "duplicate question identifiers must fail strict output validation",
+  );
+
+  const invisible = safeModelProposal();
+  invisible.summary = "Resumo\u202Evisualmente enganoso";
+  assert(
+    !validateAssistantProposal(invisible),
+    "bidirectional override characters must fail strict output validation",
+  );
+
+  const arabicLetterMark = safeModelProposal();
+  arabicLetterMark.summary = "Resumo\u061Cvisualmente enganoso";
+  assert(
+    !validateAssistantProposal(arabicLetterMark),
+    "all Unicode format controls must fail strict output validation",
+  );
+
+  const duplicatedSource = safeModelProposal();
+  duplicatedSource.sources.push({
+    kind: "user_report",
+    label: " Relato atual ",
+  });
+  assert(
+    !validateAssistantProposal(duplicatedSource),
+    "source labels equal after trimming must fail strict output validation",
+  );
+
+  const canonicallyDuplicatedSource = safeModelProposal();
+  canonicallyDuplicatedSource.sources = [
+    { kind: "user_report", label: "Cafe\u0301" },
+    { kind: "user_report", label: "Café" },
+  ];
+  assert(
+    !validateAssistantProposal(canonicallyDuplicatedSource),
+    "canonically equivalent source labels must fail strict output validation",
+  );
+});

@@ -1,8 +1,17 @@
 # Assistant triage deployment
 
+No produto Elo, esta função medeia dois fluxos: a triagem estruturada do relato de dor do aluno e as propostas do Copiloto para o professor. Ela organiza contexto e produz propostas para revisão humana; nunca diagnostica nem altera ou publica treino, prescrição ou decisão profissional. A função persiste os registros de execução e proposta necessários ao ciclo de auditoria; a decisão é registrada separadamente por um usuário autorizado.
+
 The function deliberately uses the caller's JWT for RLS and membership checks.
 It does **not** use `service_role`. Run lifecycle RPCs additionally require a
 server-only executor secret, so a browser cannot forge a model completion.
+
+## Current status
+
+The function, shared validators, SQL lifecycle and Deno tests are versioned in
+this repository. They have not been deployed or exercised against a live
+Supabase project from this checkout. Passing web tests does not validate the
+remote secret attestation, provider call, CORS configuration or database RLS.
 
 ## Required secrets
 
@@ -103,8 +112,28 @@ Pain triage accepts identifiers only:
 ```
 
 The function loads the immutable report through RLS. It never accepts
-client-authored pain text or red flags for this path. Trainer copilot remains a
-minimized free-text path until authoritative workout tables exist.
+client-authored pain text or red flags for this path. Trainer copilot accepts
+only the bounded, minimized report and workout context described by the shared
+schema; that client context remains untrusted and can produce proposals only,
+never a direct mutation or publication.
+
+All accepted requests are bounded before contacting the model provider. Elo
+keeps authorization identifiers in its own boundary, sends only the minimized
+model request, and validates the provider's structured response before storing
+it. A stored proposal is still inert until an authorized user records a
+decision through the audited RPC.
+
+## Deployment order
+
+1. Apply the matching migrations to the intended homologation project.
+2. Configure and attest `AI_EXECUTOR_SECRET` as described above.
+3. Configure `SAFETY_ID_SALT`, `OPENAI_API_KEY` and exact `ALLOWED_ORIGINS`.
+4. Run `deno check` and all Deno tests from the same commit.
+5. Deploy with JWT verification enabled.
+6. Exercise pain triage as a student and trainer copilot as an authorized
+   professional, then verify the run, proposal and decision audit records.
+7. Test an invalid origin, another workspace, expired consent, an unverified
+   trainer and an executor-secret mismatch; each must fail closed.
 
 ## Verification
 
@@ -120,3 +149,7 @@ Also test concurrent identical idempotency keys, changed payload reuse,
 cross-tenant IDs, withdrawn consent, unverified trainers, daily/concurrent
 quotas, oversized chunked bodies, provider refusal/incomplete responses, and
 executor-secret mismatch.
+
+Do not mark the function accepted from HTTP status alone. Correlate the safe
+`request_id` with the database lifecycle and confirm that logs contain no user
+identifier, bearer token, report body, model response or idempotency key.

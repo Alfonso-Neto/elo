@@ -103,6 +103,10 @@ export type AssistantProposal = {
 
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const SAFE_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,47}$/;
+const RED_FLAG_CODE_PATTERN = /^[a-z][a-z0-9_]{0,47}$/;
+const UNSAFE_TEXT_PATTERN =
+  /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\p{Cf}]/u;
 const plainObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 const boundedString = (
@@ -111,7 +115,7 @@ const boundedString = (
   maximum: number,
 ): value is string =>
   typeof value === "string" && value.trim().length >= minimum &&
-  value.length <= maximum;
+  value.length <= maximum && !UNSAFE_TEXT_PATTERN.test(value);
 const exactKeys = (
   value: Record<string, unknown>,
   expected: readonly string[],
@@ -131,7 +135,8 @@ const readStringArray = (
   if (!value.every((item) => boundedString(item, 1, maximumLength))) {
     return null;
   }
-  return value.map((item) => item.trim());
+  const normalized = value.map((item) => item.trim());
+  return new Set(normalized).size === normalized.length ? normalized : null;
 };
 
 function readContext(value: unknown): AssistantContext | null {
@@ -377,7 +382,6 @@ export function validateAssistantProposal(
     !readStringArray(value.rationale, 8, 500) ||
     !readStringArray(value.uncertainties, 8, 500)
   ) return false;
-
   if (
     !Array.isArray(value.red_flags) || value.red_flags.length > 6 ||
     !value.red_flags.every((item) => {
@@ -390,6 +394,11 @@ export function validateAssistantProposal(
         boundedString(item.evidence, 1, 300) &&
         boundedString(item.recommended_action, 1, 300);
     })
+  ) return false;
+  const redFlagCodes = value.red_flags.map((item) => item.code as string);
+  if (
+    redFlagCodes.some((code) => !RED_FLAG_CODE_PATTERN.test(code)) ||
+    new Set(redFlagCodes).size !== redFlagCodes.length
   ) return false;
 
   if (
@@ -406,6 +415,11 @@ export function validateAssistantProposal(
           item.answer_type as string,
         );
     })
+  ) return false;
+  const questionIds = value.questions.map((item) => item.id as string);
+  if (
+    questionIds.some((id) => !SAFE_ID_PATTERN.test(id)) ||
+    new Set(questionIds).size !== questionIds.length
   ) return false;
 
   if (
@@ -448,6 +462,10 @@ export function validateAssistantProposal(
         boundedString(item.label, 1, 240);
     })
   ) return false;
+  const sourceKeys = value.sources.map((item) =>
+    `${String(item.kind)}\u0000${String(item.label).trim().normalize("NFC")}`
+  );
+  if (new Set(sourceKeys).size !== sourceKeys.length) return false;
 
   return true;
 }
