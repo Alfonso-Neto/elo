@@ -34,14 +34,14 @@ as $$
 declare
   caller_id uuid := (select auth.uid());
   membership_count integer;
-  workspace_id uuid;
+  notification_workspace_id uuid;
   membership_role public.workspace_role;
 begin
   if caller_id is null then
     raise exception using errcode = '42501', message = 'notification_scope_unavailable';
   end if;
   select count(*), min(member.workspace_id::text)::uuid
-  into membership_count, workspace_id
+  into membership_count, notification_workspace_id
   from public.workspace_members as member
   where member.user_id = caller_id
     and member.status = 'active';
@@ -52,16 +52,16 @@ begin
   end if;
   select member.role into membership_role
   from public.workspace_members as member
-  where member.workspace_id = workspace_id
+  where member.workspace_id = notification_workspace_id
     and member.user_id = caller_id
     and member.status = 'active';
   if membership_role is null then
     raise exception using errcode = '42501', message = 'notification_scope_unavailable';
   elsif membership_role in ('owner','trainer')
-    and not private.is_training_professional(caller_id, workspace_id) then
+    and not private.is_training_professional(caller_id, notification_workspace_id) then
     raise exception using errcode = '42501', message = 'notification_scope_unavailable';
   end if;
-  return query select workspace_id, caller_id, membership_role;
+  return query select notification_workspace_id, caller_id, membership_role;
 end;
 $$;
 

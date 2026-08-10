@@ -47,12 +47,12 @@ begin
     for field_name in select unnest(array['protein_g','carbs_g','fat_g','kcal']) loop
       if jsonb_typeof(meal -> field_name) <> 'number' then return false; end if;
       numeric_value := (meal ->> field_name)::numeric;
-      if numeric_value < 0 or numeric_value > case field_name
+      if numeric_value < 0 or numeric_value > (case field_name
         when 'protein_g' then 300
         when 'carbs_g' then 500
         when 'fat_g' then 200
         else 3000
-      end then return false; end if;
+      end) then return false; end if;
       if field_name = 'kcal' and mod(numeric_value, 1) <> 0 then return false; end if;
     end loop;
   end loop;

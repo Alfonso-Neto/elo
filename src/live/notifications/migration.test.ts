@@ -15,7 +15,8 @@ describe('notification feed migration static safety contract', () => {
     expect(migration).toContain('caller_id uuid := (select auth.uid())')
     expect(migration).toContain("member.status = 'active'")
     expect(migration).toContain("raise exception using errcode = '21000', message = 'notification_scope_ambiguous'")
-    expect(migration).toContain('private.is_training_professional(caller_id, workspace_id)')
+    expect(migration).toContain('private.is_training_professional(caller_id, notification_workspace_id)')
+    expect(migration).toContain('where member.workspace_id = notification_workspace_id')
   })
 
   it('requires current consent for professional health notifications', () => {
