@@ -24,6 +24,15 @@ enable_signup = true
 enable_signup = true
 double_confirm_changes = true
 enable_confirmations = true
+max_frequency = "1m"
+otp_length = 8
+
+[auth.mfa]
+max_enrolled_factors = 10
+
+[auth.mfa.totp]
+enroll_enabled = true
+verify_enabled = true
 
 [functions.assistant-triage]
 verify_jwt = true
