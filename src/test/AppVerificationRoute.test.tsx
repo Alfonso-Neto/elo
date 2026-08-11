@@ -31,11 +31,9 @@ const authHarness = vi.hoisted(() => ({
       mode: 'temporary_homologation',
       temporaryAccessExpiresAt: '2026-08-09T10:00:00.000Z',
     },
-    isDemo: false,
     recoveryMode: false,
     accessError: null,
     signOut: vi.fn(),
-    leaveDemo: vi.fn(),
   },
 }))
 
@@ -48,31 +46,8 @@ vi.mock('../onboarding/TrainerVerificationScreen', () => ({
   TrainerVerificationScreen: () => <div data-testid="verification-screen">Verificação</div>,
 }))
 
-vi.mock('../trainer-screens', () => {
-  const Placeholder = () => <div>Área profissional</div>
-  return {
-    TrainerDashboard: () => <div data-testid="trainer-dashboard">Dashboard</div>,
-    StudentsScreen: Placeholder,
-    StudentDetailScreen: Placeholder,
-    CopilotScreen: Placeholder,
-    WorkoutBuilderScreen: Placeholder,
-    FormsScreen: Placeholder,
-    FormBuilderScreen: Placeholder,
-    ScheduleScreen: Placeholder,
-    MessagesScreen: Placeholder,
-  }
-})
-
-vi.mock('../student-screens', () => {
-  const Placeholder = () => <div>Área do aluno</div>
-  return {
-    StudentTodayScreen: Placeholder,
-    StudentWorkoutScreen: Placeholder,
-    StudentAssistantScreen: Placeholder,
-    NutritionScreen: Placeholder,
-    StudentScheduleScreen: Placeholder,
-    StudentFormScreen: Placeholder,
-  }
+vi.mock('../live/LiveTrainerDashboard', () => {
+  return { LiveTrainerDashboard: () => <div data-testid="trainer-dashboard">Dashboard</div> }
 })
 
 vi.mock('../live/LiveNotifications', () => ({

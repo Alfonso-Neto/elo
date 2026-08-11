@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { PrototypeProvider } from '../prototype-context'
+import { EloAppProvider } from '../app-state'
 import type { PainReport, PainReportEvent, PainReportLifecycleSummary } from '../signals'
 import { LiveTrainerDashboard } from './LiveTrainerDashboard'
 
@@ -107,7 +107,7 @@ beforeEach(() => {
 
 describe('live trainer dashboard pain lifecycle', () => {
   it('loads only unresolved lifecycle summaries and removes a resolved report after review', async () => {
-    render(<PrototypeProvider lockedRole="trainer"><LiveTrainerDashboard /></PrototypeProvider>)
+    render(<EloAppProvider lockedRole="trainer"><LiveTrainerDashboard /></EloAppProvider>)
 
     expect(await screen.findByText('Marina Costa')).toBeInTheDocument()
     expect(mocks.service.listTrainerPainReports).toHaveBeenCalledWith(workspaceId, {
@@ -151,13 +151,13 @@ describe('live trainer dashboard pain lifecycle', () => {
     mocks.service.listTrainerPainReports.mockReset()
       .mockReturnValueOnce(oldReports.promise)
       .mockResolvedValueOnce({ items: [otherReport], nextOffset: null })
-    const view = render(<PrototypeProvider lockedRole="trainer"><LiveTrainerDashboard /></PrototypeProvider>)
+    const view = render(<EloAppProvider lockedRole="trainer"><LiveTrainerDashboard /></EloAppProvider>)
 
     mocks.useAuth.mockReturnValue({
       profile: { id: trainerId, accountRole: 'trainer', displayName: 'André Lima' },
       membership: { workspaceId: otherWorkspaceId, workspaceName: 'Outro Studio', membershipRole: 'trainer', trainerName: 'André Lima' },
     })
-    view.rerender(<PrototypeProvider lockedRole="trainer"><LiveTrainerDashboard /></PrototypeProvider>)
+    view.rerender(<EloAppProvider lockedRole="trainer"><LiveTrainerDashboard /></EloAppProvider>)
     expect(await screen.findByText('Bianca Rocha')).toBeInTheDocument()
 
     await act(async () => {

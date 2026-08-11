@@ -1,3 +1,5 @@
+import { parseIsoTimestamp } from '../../lib/iso-timestamp'
+import { hasUnsafeDisplayCharacters } from '../../lib/safe-text'
 import { OperationsDomainError } from './errors'
 import {
   scheduleModes,
@@ -13,7 +15,6 @@ import {
 export const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 export const idempotencyKeyPattern = /^[A-Za-z0-9][A-Za-z0-9._:-]{15,127}$/
 
-const controlPattern = /[\u0000-\u001f\u007f-\u009f]/
 const scheduleModeSet = new Set<string>(scheduleModes)
 const scheduleSlotStateSet = new Set<string>(scheduleSlotStates)
 const scheduleSessionStateSet = new Set<string>(scheduleSessionStates)
@@ -47,7 +48,7 @@ export function normalizeSafeText(
     typeof value !== 'string'
     || value.length < 1
     || value.length > maximum
-    || controlPattern.test(value)
+    || hasUnsafeDisplayCharacters(value)
   ) {
     throw new OperationsDomainError('validation', {
       fieldErrors: { [field]: `Use um texto de 1 a ${maximum} caracteres.` },
@@ -103,9 +104,9 @@ export function normalizeCreateSlotCommand(
   if (typeof command.startAt !== 'string') {
     throw new OperationsDomainError('validation', { fieldErrors: { startAt: 'Informe uma data válida.' } })
   }
-  const startMilliseconds = Date.parse(command.startAt)
+  const startMilliseconds = parseIsoTimestamp(command.startAt)
   if (
-    !Number.isFinite(startMilliseconds)
+    startMilliseconds === null
     || startMilliseconds < nowMilliseconds + (5 * 60 * 1000)
     || startMilliseconds > nowMilliseconds + (365 * 24 * 60 * 60 * 1000)
   ) {

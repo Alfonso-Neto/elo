@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { App } from '../App'
 import { AuthLoadingScreen } from '../auth/AuthPage'
-import { PrototypeProvider, usePrototype } from '../prototype-context'
+import { EloAppProvider, useEloApp } from '../app-state'
 
 beforeEach(() => {
   localStorage.clear()
@@ -17,13 +17,15 @@ describe('Elo authentication entry', () => {
   })
 
   it('fails closed on the login page when remote auth is not configured', () => {
+    localStorage.setItem('elo-pain', '[{"detail":"legacy-sensitive-context"}]')
     render(<App />)
     expect(screen.getByRole('heading', { name: /Entre no seu Elo/i })).toBeInTheDocument()
     expect(screen.getByText(/Ambiente sem conexão de autenticação/i)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /Explorar demonstração/i })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Explorar demonstração/i })).not.toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: /Bom dia, André/i })).not.toBeInTheDocument()
     expect(document.getElementById('main-content')).toBeInTheDocument()
     expect(document.title).toBe('Entrar · Elo')
+    expect(localStorage.getItem('elo-pain')).toBeNull()
   })
 
   it('describes validation errors and focuses the first invalid field', async () => {
@@ -57,37 +59,47 @@ describe('Elo authentication entry', () => {
     expect(screen.getByLabelText(/Nome completo/i)).toBeInTheDocument()
   })
 
-  it('enters demo mode only after an explicit action', async () => {
+  it('does not treat the legacy demo query as authenticated access', () => {
+    window.history.replaceState(null, '', '/?demo=1&role=trainer#/dashboard')
     render(<App />)
-    fireEvent.click(screen.getByRole('button', { name: /Explorar demonstração/i }))
-    expect(await screen.findByRole('heading', { name: /Bom dia, André/i })).toBeInTheDocument()
-    expect(new URLSearchParams(window.location.search).get('demo')).toBe('1')
+    expect(screen.getByRole('heading', { name: /Entre no seu Elo/i })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: /Bom dia, André/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Explorar demonstração/i })).not.toBeInTheDocument()
+    expect(window.location.search).toBe('')
   })
 })
 
 function LockedRoleProbe() {
-  const { role, page, switchRole, navigate, resetPrototype } = usePrototype()
+  const { role, page, navigate } = useEloApp()
   return <div>
     <output aria-label="papel">{role}</output><output aria-label="pagina">{page}</output>
-    <button onClick={() => switchRole('trainer')}>Tentar elevar papel</button>
     <button onClick={() => navigate('dashboard')}>Tentar abrir painel</button>
-    <button onClick={resetPrototype}>Reiniciar</button>
+    <button onClick={() => navigate('messages')}>Abrir rota compartilhada</button>
   </div>
 }
 
 describe('authenticated role lock', () => {
-  it('ignores query, navigation, switching, and reset attempts that conflict with the server role', () => {
+  it('derives routing only from the required server role and ignores the legacy role query', () => {
     window.history.replaceState(null, '', '/?role=trainer#/dashboard')
     localStorage.setItem('elo-auth', 'active-session')
-    render(<PrototypeProvider lockedRole="student"><LockedRoleProbe /></PrototypeProvider>)
+    const view = render(<EloAppProvider lockedRole="student"><LockedRoleProbe /></EloAppProvider>)
+
     expect(screen.getByLabelText('papel')).toHaveTextContent('student')
     expect(screen.getByLabelText('pagina')).toHaveTextContent('today')
-    fireEvent.click(screen.getByRole('button', { name: /Tentar elevar papel/i }))
+
+    fireEvent.click(screen.getByRole('button', { name: /Abrir rota compartilhada/i }))
+    expect(screen.getByLabelText('pagina')).toHaveTextContent('messages')
+    expect(window.location.hash).toBe('#/messages')
+
     fireEvent.click(screen.getByRole('button', { name: /Tentar abrir painel/i }))
-    fireEvent.click(screen.getByRole('button', { name: /Reiniciar/i }))
     expect(screen.getByLabelText('papel')).toHaveTextContent('student')
     expect(screen.getByLabelText('pagina')).toHaveTextContent('today')
     expect(window.location.hash).toBe('#/today')
+
+    view.rerender(<EloAppProvider lockedRole="trainer"><LockedRoleProbe /></EloAppProvider>)
+    expect(screen.getByLabelText('papel')).toHaveTextContent('trainer')
+    expect(screen.getByLabelText('pagina')).toHaveTextContent('dashboard')
+    expect(window.location.hash).toBe('#/dashboard')
     expect(localStorage.getItem('elo-auth')).toBe('active-session')
   })
 })

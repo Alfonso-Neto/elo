@@ -1,10 +1,13 @@
 # Elo — implantação e aceite de homologação
 
-Este roteiro prepara um ambiente separado para validar o produto com contas reais. Ele não autoriza aplicar as migrations em produção nem usar dados reais de saúde antes da revisão jurídica/LGPD.
+Este é o runbook operacional para validar, em um ambiente separado, as fronteiras centrais do Elo: vínculo entre professor e aluno, consentimento, verificação profissional, isolamento por papel e workspace, ciclo dor → proposta → decisão → publicação, idempotência e falha fechada.
+
+Para entender a proposta antes de executar o aceite, leia a [visão geral](./README.md) e a [documentação do produto](./elo-documentacao.md). Este roteiro não autoriza aplicar migrations em produção nem usar dados reais de saúde antes da revisão jurídica/LGPD.
 
 ## 1. O que precisa existir
 
-- Node.js 22 ou superior.
+- Node.js 22.12 ou superior.
+- Deno 2 para validar a Edge Function localmente.
 - Um projeto Supabase exclusivo para homologação.
 - Supabase CLI instalada e autenticada, ou acesso equivalente pelo painel.
 - Hospedagem HTTPS para o frontend.
@@ -17,12 +20,27 @@ Use dados fictícios ou sintéticos durante o aceite técnico. Não reutilize ch
 
 ```bash
 npm ci
-npm run typecheck
-npm test
-npm run build
+npm run verify
+deno check supabase/functions/assistant-triage/index.ts
+deno test --allow-read supabase/functions/assistant-triage
 ```
 
-O artefato estático fica em `dist/`. A aplicação usa rotas por hash, então login, confirmação e redefinição continuam partindo do mesmo documento HTML.
+`npm run verify` valida documentação, contratos do código-fonte, SQL/RLS, TypeScript, testes web, estilos, HTML, build e limites de bundle. O artefato estático fica em `dist/`. A aplicação usa rotas por hash, então login, confirmação e redefinição continuam partindo do mesmo documento HTML. A automação do repositório executa a mesma verificação web e também os testes da Edge Function com Deno 2.
+
+### Estado técnico registrado em 11/08/2026
+
+- `npm run verify`: aprovado;
+- 59 arquivos de produção verificados pelo contrato estático de código-fonte;
+- 57 arquivos e 303 testes web: aprovados;
+- build de 29 arquivos e contratos de tamanho/tema/HTML: aprovados;
+- Deno `2.9.5`: `deno check` aprovado e 21 testes aprovados;
+- Supabase CLI `2.113.0`: projeto Elo Homolog vinculado, 17 migrations em paridade e Edge Function ativa;
+- `db reset` local e `db lint`: aprovados com as 17 migrations;
+- aceite remoto não privilegiado: 18 controles aprovados, incluindo IDs reais do segundo workspace;
+- E2E conectado à homologação: 5 cenários aprovados em 390/768 px, teclado e redução de movimento;
+- chaves legadas `anon/service_role`: desativadas após migração e smoke test com `sb_publishable_*`.
+
+Não interprete esses resultados como aceite de produção. Hospedagem HTTPS pública, monitoramento/alertas, e-mail de confirmação e recuperação, rollback operacional e responsáveis humanos ainda são gates abertos.
 
 ## 3. Preparar o Supabase
 
@@ -36,7 +54,7 @@ supabase db push --linked
 
 Não use `db reset --linked` em um projeto compartilhado: esse comando recria o schema remoto. Antes de qualquer alteração posterior, confirme o `project-ref` e mantenha backup do ambiente.
 
-As 14 migrations devem aparecer, em ordem, no histórico remoto. Elas cobrem:
+As 17 migrations devem aparecer, em ordem, no histórico remoto. Elas cobrem:
 
 | Domínio | Persistência e fronteira |
 |---|---|
@@ -47,8 +65,13 @@ As 14 migrations devem aparecer, em ordem, no histórico remoto. Elas cobrem:
 | Operação | agenda, solicitações, eventos e conversa privada |
 | Nutrição | planos do parceiro, consentimento, refeições e hidratação |
 | Notificações | feed derivado dos domínios e recibos de leitura |
+| Texto exibido | rejeição de caracteres invisíveis, bidirecionais e de controle em campos visíveis e varredura recursiva dos payloads JSONB persistidos |
+| Limites JSONB | medição determinística dos payloads pelo texto canônico e revalidação transacional das constraints afetadas |
+| DML autenticado seguro | permissão mínima para que constraints de texto sejam avaliadas em updates autorizados sem expor o validador JSON |
 
-O SQL versionado possui testes estáticos, mas este checkout não teve acesso a um Postgres/Supabase vivo. Execute o aceite contra o projeto recém-criado antes de liberar a coorte.
+O SQL versionado possui testes estáticos e deve passar por `db reset` e `db lint` locais antes do envio. O aceite remoto ainda é obrigatório antes de liberar a coorte.
+
+Antes de `db push`, registre o `project-ref`, confirme visualmente que é o projeto de homologação e exporte um backup se o ambiente já contiver dados. Depois do push, confira as 17 versões na tabela de histórico e pare se houver migration ausente, fora de ordem ou aplicada manualmente.
 
 ## 4. Configurar Auth
 
@@ -128,6 +151,8 @@ VITE_SUPABASE_PUBLISHABLE_KEY=<publishable-key-do-projeto>
 
 Gere `dist/` no pipeline e publique seu conteúdo na raiz do site. Valide no bundle e nas variáveis da plataforma que nenhuma chave `service_role`, `sb_secret_*` ou segredo da OpenAI foi exposto.
 
+O HTML inclui `noindex,nofollow,noarchive` porque este artefato é uma aplicação autenticada de homologação. Mantenha a origem fora de catálogos públicos e proteja também a plataforma de hospedagem; a diretiva para robôs não é um controle de segurança.
+
 ## 8. Preparar o vínculo real
 
 1. Cadastre e confirme a conta **Professor**.
@@ -146,7 +171,7 @@ Use perfis de navegador separados. Uma conta autenticada não pode alternar para
 3. O aluno registra refeições e hidratação.
 4. O professor visualiza somente o resumo permitido pelo consentimento; ele não cria nem altera o plano.
 
-Nunca faça a ingestão pelo navegador e nunca exponha `service_role` para facilitar a demonstração.
+Nunca faça a ingestão pelo navegador e nunca exponha `service_role` para facilitar testes de homologação.
 
 ## 10. Matriz mínima de aceite
 
@@ -165,8 +190,20 @@ Nunca faça a ingestão pelo navegador e nunca exponha `service_role` para facil
 | Notificações | feed por papel, alvo correto e recibo de leitura |
 | Isolamento | usuário de outro workspace não lê nem altera os registros |
 | Recuperação | senha redefinida e sessões anteriores encerradas |
+| Falha fechada | sem chave pública, com chave proibida ou com backend indisponível, nenhuma área autenticada é simulada |
+| Conectividade | perda de rede é anunciada e nenhuma ação é mostrada como concluída sem recibo do servidor |
 
 Faça também testes em 390 px, 768 px e desktop, por teclado e com redução de movimento ativada.
+
+Para o teste de isolamento, use pelo menos dois workspaces sintéticos. Tente acessar identificadores válidos do outro workspace por consultas, RPCs e navegação direta; uma tela vazia sozinha não é evidência suficiente de RLS.
+
+Depois de preparar as contas e os IDs sintéticos descritos em [Operação do piloto](./docs/PILOT-OPERATIONS.md), execute o aceite não privilegiado:
+
+```bash
+node scripts/remote-acceptance.mjs
+```
+
+O processo deve terminar com código zero e uma linha-resumo com `failed: 0`. Não execute com `service_role`; não publique as variáveis `PILOT_*` no frontend nem anexe dump do ambiente. Use o [modelo de evidência](./docs/PILOT-EVIDENCE.md) para a decisão de liberação.
 
 ## 11. Evidências e decisão
 
@@ -183,3 +220,16 @@ Registre para cada rodada:
 - confirmação de que nenhum segredo entrou no frontend ou nos logs.
 
 Só libere a coorte quando todas as jornadas críticas passarem, o isolamento entre workspaces for verificado no banco remoto e existir responsável definido para incidentes, exclusão de dados e retirada de consentimento.
+
+Hospedagem, observabilidade, redaction de logs, alertas, rollback e o processo operacional de revisão do CREF estão definidos em [Operação do piloto](./docs/PILOT-OPERATIONS.md). Envio transacional de convites/e-mails e vídeos licenciados de exercícios permanecem evoluções futuras, fora deste piloto.
+
+## 12. Critério de saída
+
+A homologação técnica termina somente quando:
+
+1. `npm run verify`, `deno check` e `deno test` passam no mesmo commit implantado;
+2. as 17 migrations e a função publicada correspondem ao repositório;
+3. professor, aluno e segundo workspace completam a matriz sem quebra de isolamento;
+4. nenhum segredo aparece no frontend, artefato, captura ou log;
+5. falhas encontradas possuem decisão registrada — corrigida, aceita explicitamente ou bloqueadora da coorte;
+6. existe um plano de rollback e responsáveis por suporte, incidente e retirada de consentimento.

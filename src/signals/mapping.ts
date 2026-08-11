@@ -1,4 +1,5 @@
 import { SignalDomainError } from './errors'
+import { hasUnsafeDisplayCharacters } from '../lib/safe-text'
 import {
   bodySides,
   knownRedFlagCodes,
@@ -18,7 +19,6 @@ const timingSet = new Set<string>(symptomTimings)
 const knownRedFlagSet = new Set<string>(knownRedFlagCodes)
 const painSafetyAliasMap: Readonly<Record<string, KnownRedFlagCode>> = painSafetyRedFlagAliases
 const redFlagCodePattern = /^[a-z][a-z0-9_]{1,47}$/
-const controlCharacterPattern = /[\u0000-\u001f\u007f]/
 
 const sideAliases: Record<string, BodySide> = {
   esquerda: 'left',
@@ -131,10 +131,10 @@ export function mapPainReportDraft(
   const redFlags = normalizeRedFlags(input)
   const now = options.now ?? new Date()
 
-  if (region.length < 2 || region.length > 64 || controlCharacterPattern.test(region)) {
+  if (region.length < 2 || region.length > 64 || hasUnsafeDisplayCharacters(region)) {
     errors.region = 'Informe uma região válida com até 64 caracteres.'
   }
-  if (movement.length < 1 || movement.length > 120 || controlCharacterPattern.test(movement)) {
+  if (movement.length < 1 || movement.length > 120 || hasUnsafeDisplayCharacters(movement)) {
     errors.movement = 'Informe o movimento relacionado com até 120 caracteres.'
   }
   if (!side) errors.side = 'Escolha um lado válido.'
@@ -145,7 +145,7 @@ export function mapPainReportDraft(
   if (Number.isNaN(onsetDate.getTime()) || onsetDate.getTime() > now.getTime() + 5 * 60_000) {
     errors.onset = 'Informe uma data de início válida.'
   }
-  if (detail && (detail.length > 2000 || detail.includes('\u0000'))) {
+  if (detail && (detail.length > 2000 || hasUnsafeDisplayCharacters(detail, true))) {
     errors.detail = 'O detalhe deve ter até 2.000 caracteres.'
   }
   if (!redFlags) errors.redFlags = 'As respostas de sinais de alerta são inválidas.'

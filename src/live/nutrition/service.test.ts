@@ -122,6 +122,9 @@ describe('nutrition scoped read contract', () => {
 
     const impossibleDate = fakeBoundary({ currentPlan: vi.fn(async () => ok([plan({ valid_until: '2026-02-31' })])) })
     await expect(createNutritionService(impossibleDate.value).loadDashboard()).rejects.toMatchObject({ code: 'unavailable' })
+
+    const deceptiveTitle = fakeBoundary({ currentPlan: vi.fn(async () => ok([plan({ title: 'Plano\u202Einvertido' })])) })
+    await expect(createNutritionService(deceptiveTitle.value).loadDashboard()).rejects.toMatchObject({ code: 'unavailable' })
   })
 
   it('rejects an event whose day or plan differs from the scoped request', async () => {

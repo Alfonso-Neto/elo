@@ -70,7 +70,6 @@ body.auth-active{padding-bottom:0!important;background:var(--paper);overflow-x:h
 .auth-state{width:min(540px,100%);text-align:left}.auth-state-icon{width:59px;height:59px;display:grid;place-items:center;margin-bottom:26px;border-radius:18px;background:#dcece2;color:var(--pine)}.auth-state-icon.warning{background:var(--apricot-soft);color:var(--apricot-deep)}
 .auth-state>p{margin-bottom:25px}.auth-state>p strong{color:var(--ink);overflow-wrap:anywhere}.auth-state .state-link{width:100%;margin-top:9px}.auth-success-note{margin:0 0 15px;padding:12px 14px;border:1px solid #b9d4c3;border-radius:12px;background:#ecf6ef;color:var(--pine-deep);font-size:10px;line-height:1.5}
 .auth-environment{width:min(620px,100%);display:grid;grid-template-columns:20px 1fr;gap:8px;margin:0 auto 12px;padding:11px 13px;border:1px solid #d7c9a3;border-radius:12px;background:#f8f1df;color:#70581e}.auth-environment p{margin:0;font-size:9px;line-height:1.5}.auth-environment strong{display:block}
-.demo-entry{width:min(620px,100%);min-height:48px;display:flex;justify-content:space-between;align-items:center;margin:0 auto;padding:0 15px;border:1px solid var(--line);border-radius:13px;background:rgba(255,255,255,.58);color:var(--ink);font-size:10px;font-weight:700}.demo-entry:hover{border-color:var(--pine);color:var(--pine);background:#fff}
 .auth-footer{width:100%;margin-top:18px;color:#87948c;font:600 7px var(--mono);letter-spacing:.09em;text-align:center}
 
 .auth-loading{min-height:100dvh;display:grid;place-content:center;justify-items:center;gap:18px;background:var(--paper);color:var(--pine)}.auth-loading .brand{font-size:34px}.auth-loading p{margin:0;color:var(--ink-soft);font-size:10px}.auth-loading-line{width:132px;height:2px;overflow:hidden;background:var(--line)}.auth-loading-line:after{content:"";display:block;width:48%;height:100%;background:var(--pine);animation:authLoading 1s ease-in-out infinite alternate}@keyframes authLoading{to{transform:translateX(108%)}}
@@ -78,21 +77,22 @@ body.auth-active{padding-bottom:0!important;background:var(--paper);overflow-x:h
 .sidebar .account-action{color:var(--ink-soft)}
 
 @media(max-width:1040px){
-  .auth-shell{grid-template-columns:minmax(330px,40%) minmax(450px,60%)}
+  .auth-shell{grid-template-columns:minmax(300px,40%) minmax(0,60%)}
   .auth-story{padding:34px}.auth-story-copy h1{font-size:48px}.auth-signal{right:-180px;opacity:.55}.auth-proof>span+span{padding-left:10px}.auth-main{padding-inline:36px}
   .auth-professional-grid{grid-template-columns:1fr .55fr}.auth-professional-grid .auth-field:last-child{grid-column:1/-1}
 }
 
 @media(max-width:760px){
-  .auth-shell{display:block;min-height:100dvh}.auth-story{display:none}
-  .auth-main{min-height:100dvh;padding:0 18px calc(22px + env(safe-area-inset-bottom));background:radial-gradient(circle at 100% 0,rgba(43,190,134,.11),transparent 32%),var(--paper)}
+  .auth-shell{width:100%;max-width:100%;display:block;min-height:100dvh;overflow-x:clip}.auth-story{display:none}
+  .auth-main{width:100%;max-width:100%;min-height:100dvh;align-items:stretch;overflow-x:clip;padding:0 18px calc(22px + env(safe-area-inset-bottom));background:radial-gradient(circle at 100% 0,rgba(43,190,134,.11),transparent 32%),var(--paper)}
+  .auth-mobile-head,.auth-nav,.auth-panel,.auth-form,.auth-environment,.auth-footer{min-width:0;max-width:100%}
   .auth-mobile-head{width:100%;height:76px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--line)}
   .auth-mobile-head .brand{font-size:25px}.auth-mobile-head .brand-mark{transform:scale(.82);transform-origin:left}.auth-mobile-head>span{color:var(--pine);font:700 7px var(--mono);letter-spacing:.12em}
   .auth-nav{align-self:stretch;margin-top:16px}.auth-nav button{flex:1}
   .auth-panel{padding:39px 0 27px}.auth-heading{margin-bottom:25px}.auth-heading h2,.auth-state h2{font-size:39px}.auth-heading.compact h2{font-size:34px}
   .auth-role-grid{grid-template-columns:1fr}.auth-role-grid>button{min-height:176px}.auth-role-grid p{max-width:330px}
   .auth-two-columns{grid-template-columns:1fr}.auth-professional-grid{grid-template-columns:1fr 88px}.auth-professional-grid .auth-field:last-child{grid-column:1/-1}
-  .auth-environment,.demo-entry{flex-shrink:0}.auth-footer{padding-bottom:3px}
+  .auth-environment{flex-shrink:0}.auth-footer{padding-bottom:3px}
 }
 
 @media(max-width:360px){

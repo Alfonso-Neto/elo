@@ -65,6 +65,9 @@ describe('notification feed service', () => {
     const crossed = boundary({ data: [item({ student_user_id: 'another-student' })], error: null })
     await expect(createNotificationService(crossed.value).listNotifications()).rejects.toBeInstanceOf(NotificationDomainError)
 
+    const deceptive = boundary({ data: [item({ title: 'Atualização\u202Einvertida' })], error: null })
+    await expect(createNotificationService(deceptive.value).listNotifications()).rejects.toBeInstanceOf(NotificationDomainError)
+
     const outOfOrder = boundary({ data: [item({ priority: 1 }), item({
       item_key: 'schedule:66666666-6666-4666-8666-666666666666:confirmed',
       kind: 'schedule', title: 'Sessão confirmada', detail: 'Studio', target_page: 'schedule', priority: 2,

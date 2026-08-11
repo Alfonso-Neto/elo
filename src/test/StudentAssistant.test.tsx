@@ -1,8 +1,8 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AssistantProposal } from '../assistant/assistant-service'
-import { PrototypeProvider } from '../prototype-context'
-import { StudentAssistantScreen } from '../student-screens'
+import { EloAppProvider } from '../app-state'
+import { StudentAssistantScreen } from '../student-assistant-screen'
 
 const mocks = vi.hoisted(() => ({
   useAuth: vi.fn(),
@@ -78,7 +78,6 @@ beforeEach(() => {
   localStorage.clear()
   window.history.replaceState(null, '', '/#/assistant')
   mocks.useAuth.mockReturnValue({
-    isDemo: false,
     membership: { workspaceId, workspaceName: 'Studio Elo', membershipRole: 'student', trainerName: 'André Lima' },
     profile: { id: studentId, accountRole: 'student', displayName: 'Marina Costa' },
   })
@@ -92,6 +91,24 @@ beforeEach(() => {
 })
 
 describe('authenticated student assistant concurrency', () => {
+  it('warns before leaving while a private pain report is incomplete', async () => {
+    render(<EloAppProvider lockedRole="student"><StudentAssistantScreen /></EloAppProvider>)
+    await waitFor(() => expect(mocks.getLatestWorkoutVersion).toHaveBeenCalledTimes(1))
+    const cleanExit = new Event('beforeunload', { cancelable: true })
+    window.dispatchEvent(cleanExit)
+    expect(cleanExit.defaultPrevented).toBe(false)
+
+    fireEvent.click(screen.getByRole('button', { name: /Senti uma dor/i }))
+    const dirtyExit = new Event('beforeunload', { cancelable: true })
+    window.dispatchEvent(dirtyExit)
+    expect(dirtyExit.defaultPrevented).toBe(true)
+
+    fireEvent.click(screen.getByRole('button', { name: /Voltar uma etapa/i }))
+    const resetExit = new Event('beforeunload', { cancelable: true })
+    window.dispatchEvent(resetExit)
+    expect(resetExit.defaultPrevented).toBe(false)
+  })
+
   it('discards an older AI response after a new pain report is completed', async () => {
     let resolveFirst!: (value: ReturnType<typeof completeResult>) => void
     const firstResponse = new Promise<ReturnType<typeof completeResult>>((resolve) => { resolveFirst = resolve })
@@ -100,7 +117,7 @@ describe('authenticated student assistant concurrency', () => {
       ? firstResponse
       : Promise.resolve(completeResult('Orientação vinculada ao relato atual.', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa')))
 
-    render(<PrototypeProvider lockedRole="student"><StudentAssistantScreen /></PrototypeProvider>)
+    render(<EloAppProvider lockedRole="student"><StudentAssistantScreen /></EloAppProvider>)
     await submitPainReport()
     await waitFor(() => expect(mocks.requestPainTriage).toHaveBeenCalledWith(expect.objectContaining({ painReportId: firstReportId })))
 
@@ -123,7 +140,7 @@ describe('authenticated student assistant concurrency', () => {
       .mockResolvedValueOnce({ state: 'processing', runId: '88888888-8888-4888-8888-888888888888' })
       .mockResolvedValueOnce(completeResult('Revisão concluída para o mesmo relato.', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'))
 
-    render(<PrototypeProvider lockedRole="student"><StudentAssistantScreen /></PrototypeProvider>)
+    render(<EloAppProvider lockedRole="student"><StudentAssistantScreen /></EloAppProvider>)
     await submitPainReport()
     expect(await screen.findByText(/análise em processamento/i)).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: /Verificar novamente/i }))

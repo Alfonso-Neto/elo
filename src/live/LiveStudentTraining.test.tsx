@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { PrototypeProvider, usePrototype } from '../prototype-context'
+import { EloAppProvider, useEloApp } from '../app-state'
 import { LiveStudentWorkoutScreen } from './LiveStudentTraining'
 
 const mocks = vi.hoisted(() => ({
@@ -40,12 +40,12 @@ const secondWorkoutVersion = {
 }
 
 function EntryProbe() {
-  const { assistantEntry, page } = usePrototype()
+  const { assistantEntry, page } = useEloApp()
   return <output>{`${page}:${assistantEntry?.movement ?? 'sem-contexto'}`}</output>
 }
 
 function SessionProbe() {
-  const { studentWorkoutPinnedVersions, studentWorkoutSessionDrafts } = usePrototype()
+  const { studentWorkoutPinnedVersions, studentWorkoutSessionDrafts } = useEloApp()
   const sessions = Object.values(studentWorkoutSessionDrafts)
   return <>
     <output>{`student-sessions:${sessions.length}:${sessions[0]?.completion.state ?? 'none'}`}</output>
@@ -54,7 +54,7 @@ function SessionProbe() {
 }
 
 function WorkoutRouteHarness() {
-  const { assistantEntry, navigate, page, studentWorkoutPinnedVersions, studentWorkoutSessionDrafts } = usePrototype()
+  const { assistantEntry, navigate, page, studentWorkoutPinnedVersions, studentWorkoutSessionDrafts } = useEloApp()
   const sessions = Object.values(studentWorkoutSessionDrafts)
   return <>
     <output>{`student-sessions:${sessions.length}:${sessions[0]?.completion.state ?? 'none'}`}</output>
@@ -81,7 +81,7 @@ afterEach(() => vi.restoreAllMocks())
 
 describe('authenticated student workout', () => {
   it('opens a transient exercise-scoped pain report without browser persistence', async () => {
-    render(<PrototypeProvider lockedRole="student"><LiveStudentWorkoutScreen /><EntryProbe /></PrototypeProvider>)
+    render(<EloAppProvider lockedRole="student"><LiveStudentWorkoutScreen /><EntryProbe /></EloAppProvider>)
 
     const exerciseTitle = await screen.findByText('Agachamento búlgaro')
     fireEvent.click(exerciseTitle.closest('button')!)
@@ -95,7 +95,7 @@ describe('authenticated student workout', () => {
   it('restores exercise progress, a running timer, and feedback after the pain assistant', async () => {
     const startedAt = 1_722_000_000_000
     vi.spyOn(Date, 'now').mockReturnValue(startedAt)
-    render(<PrototypeProvider lockedRole="student"><WorkoutRouteHarness /></PrototypeProvider>)
+    render(<EloAppProvider lockedRole="student"><WorkoutRouteHarness /></EloAppProvider>)
 
     const exerciseTitle = await screen.findByText('Agachamento búlgaro')
     fireEvent.click(screen.getByRole('button', { name: 'Começar' }))
@@ -132,7 +132,7 @@ describe('authenticated student workout', () => {
     mocks.getLatestWorkoutVersion.mockReset()
       .mockResolvedValueOnce(workoutVersion)
       .mockResolvedValueOnce(secondWorkoutVersion)
-    render(<PrototypeProvider lockedRole="student"><WorkoutRouteHarness /></PrototypeProvider>)
+    render(<EloAppProvider lockedRole="student"><WorkoutRouteHarness /></EloAppProvider>)
 
     expect(await screen.findByText('Agachamento búlgaro')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Concluir Agachamento búlgaro' }))
@@ -166,7 +166,7 @@ describe('authenticated student workout', () => {
     mocks.completeWorkoutVersion
       .mockRejectedValueOnce(new Error('Falha temporária na conclusão.'))
       .mockResolvedValueOnce('77777777-7777-4777-8777-777777777777')
-    render(<PrototypeProvider lockedRole="student"><LiveStudentWorkoutScreen /><SessionProbe /></PrototypeProvider>)
+    render(<EloAppProvider lockedRole="student"><LiveStudentWorkoutScreen /><SessionProbe /></EloAppProvider>)
 
     expect(await screen.findByText('Agachamento búlgaro')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: /Finalizar e enviar feedback/i }))
@@ -191,7 +191,7 @@ describe('authenticated student workout', () => {
   it('keeps completion locked across a remount and surfaces the old request success', async () => {
     let resolveCompletion!: (value: string) => void
     mocks.completeWorkoutVersion.mockReturnValueOnce(new Promise<string>((resolve) => { resolveCompletion = resolve }))
-    render(<PrototypeProvider lockedRole="student"><WorkoutRouteHarness /></PrototypeProvider>)
+    render(<EloAppProvider lockedRole="student"><WorkoutRouteHarness /></EloAppProvider>)
 
     expect(await screen.findByText('Agachamento búlgaro')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: /Finalizar e enviar feedback/i }))
@@ -232,7 +232,7 @@ describe('authenticated student workout', () => {
   })
 
   it('hides the loaded workout immediately when student access is lost', async () => {
-    const view = render(<PrototypeProvider lockedRole="student"><LiveStudentWorkoutScreen /></PrototypeProvider>)
+    const view = render(<EloAppProvider lockedRole="student"><LiveStudentWorkoutScreen /></EloAppProvider>)
 
     expect(await screen.findByText('Agachamento búlgaro')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: /Finalizar e enviar feedback/i }))
@@ -242,7 +242,7 @@ describe('authenticated student workout', () => {
       membership: { workspaceId, workspaceName: 'Studio Elo', membershipRole: 'trainer', trainerName: 'André Lima' },
       profile: { id: studentId, accountRole: 'student', displayName: 'Marina Costa' },
     })
-    view.rerender(<PrototypeProvider lockedRole="student"><LiveStudentWorkoutScreen /></PrototypeProvider>)
+    view.rerender(<EloAppProvider lockedRole="student"><LiveStudentWorkoutScreen /></EloAppProvider>)
 
     expect(screen.getByRole('heading', { name: 'Treino indisponível.' })).toBeInTheDocument()
     expect(screen.queryByText('Agachamento búlgaro')).not.toBeInTheDocument()
@@ -252,11 +252,11 @@ describe('authenticated student workout', () => {
   it('never restores a stale workout after authentication disappears', async () => {
     let resolveWorkout!: (value: typeof workoutVersion) => void
     mocks.getLatestWorkoutVersion.mockReturnValueOnce(new Promise((resolve) => { resolveWorkout = resolve }))
-    const view = render(<PrototypeProvider lockedRole="student"><LiveStudentWorkoutScreen /></PrototypeProvider>)
+    const view = render(<EloAppProvider lockedRole="student"><LiveStudentWorkoutScreen /></EloAppProvider>)
 
     expect(screen.getByText('Carregando seu treino publicado...')).toBeInTheDocument()
     mocks.useAuth.mockReturnValue({ membership: null, profile: null })
-    view.rerender(<PrototypeProvider lockedRole="student"><LiveStudentWorkoutScreen /></PrototypeProvider>)
+    view.rerender(<EloAppProvider lockedRole="student"><LiveStudentWorkoutScreen /></EloAppProvider>)
     expect(screen.getByRole('heading', { name: 'Treino indisponível.' })).toBeInTheDocument()
 
     await act(async () => { resolveWorkout(workoutVersion); await Promise.resolve() })

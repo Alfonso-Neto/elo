@@ -1,6 +1,6 @@
 import { act, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { PrototypeProvider } from '../prototype-context'
+import { EloAppProvider } from '../app-state'
 import type { PainReportEvent, PainReportSummary } from '../signals'
 import { LiveStudentTodayScreen } from './LiveStudentTraining'
 
@@ -90,7 +90,7 @@ const acknowledgedEvent: PainReportEvent = {
 }
 
 function renderToday() {
-  return render(<PrototypeProvider lockedRole="student"><LiveStudentTodayScreen /></PrototypeProvider>)
+  return render(<EloAppProvider lockedRole="student"><LiveStudentTodayScreen /></EloAppProvider>)
 }
 
 beforeEach(() => {
@@ -143,7 +143,7 @@ describe('student-visible pain resolution feedback', () => {
 
     expect(await screen.findByText('Vamos adaptar a amplitude e acompanhar amanhã.')).toBeInTheDocument()
     mocks.useAuth.mockReturnValue({ membership: null, profile: null })
-    view.rerender(<PrototypeProvider lockedRole="student"><LiveStudentTodayScreen /></PrototypeProvider>)
+    view.rerender(<EloAppProvider lockedRole="student"><LiveStudentTodayScreen /></EloAppProvider>)
 
     expect(screen.getByRole('heading', { name: 'Resumo indisponível.' })).toBeInTheDocument()
     expect(screen.queryByText('Vamos adaptar a amplitude e acompanhar amanhã.')).not.toBeInTheDocument()
@@ -158,7 +158,7 @@ describe('student-visible pain resolution feedback', () => {
 
     await waitFor(() => expect(mocks.signals.listPainReportTimeline).toHaveBeenCalledTimes(1))
     mocks.useAuth.mockReturnValue({ membership: null, profile: null })
-    view.rerender(<PrototypeProvider lockedRole="student"><LiveStudentTodayScreen /></PrototypeProvider>)
+    view.rerender(<EloAppProvider lockedRole="student"><LiveStudentTodayScreen /></EloAppProvider>)
     expect(screen.getByRole('heading', { name: 'Resumo indisponível.' })).toBeInTheDocument()
 
     await act(async () => {

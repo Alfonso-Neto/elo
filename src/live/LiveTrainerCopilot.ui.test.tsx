@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { PrototypeProvider } from '../prototype-context'
+import { EloAppProvider } from '../app-state'
 import type { PainReportLifecycleSummary } from '../signals'
 import { LiveTrainerCopilot } from './LiveTrainerCopilot'
 
@@ -80,7 +80,7 @@ beforeEach(() => {
 
 describe('live trainer Copilot signal boundary', () => {
   it('uses the unresolved lifecycle queue once and switches students without reloading the roster', async () => {
-    render(<PrototypeProvider lockedRole="trainer"><LiveTrainerCopilot /></PrototypeProvider>)
+    render(<EloAppProvider lockedRole="trainer"><LiveTrainerCopilot /></EloAppProvider>)
 
     expect(await screen.findByText(/Joelho da Marina · Agachamento/i)).toBeInTheDocument()
     expect(mocks.listTrainerPainReports).toHaveBeenCalledWith(workspaceId, {
@@ -96,11 +96,11 @@ describe('live trainer Copilot signal boundary', () => {
   })
 
   it('hides an already loaded health signal immediately after professional scope loss', async () => {
-    const view = render(<PrototypeProvider lockedRole="trainer"><LiveTrainerCopilot /></PrototypeProvider>)
+    const view = render(<EloAppProvider lockedRole="trainer"><LiveTrainerCopilot /></EloAppProvider>)
     expect(await screen.findByText(/Joelho da Marina · Agachamento/i)).toBeInTheDocument()
 
     mocks.useAuth.mockReturnValue({ profile: null, membership: null })
-    view.rerender(<PrototypeProvider lockedRole="trainer"><LiveTrainerCopilot /></PrototypeProvider>)
+    view.rerender(<EloAppProvider lockedRole="trainer"><LiveTrainerCopilot /></EloAppProvider>)
 
     expect(screen.getByRole('heading', { name: 'Copiloto profissional indisponível.' })).toBeInTheDocument()
     expect(screen.queryByText(/Joelho da Marina/i)).not.toBeInTheDocument()

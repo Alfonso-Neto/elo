@@ -1,8 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import type { FormQuestion } from '../../types'
-import { validateAnswers, validateExercises, validateQuestions } from './validation'
+import { isUuid, validateAnswers, validateExercises, validateQuestions } from './validation'
 
 describe('training JSON boundaries', () => {
+  it('accepts generated UUIDs and rejects nil or malformed-variant identifiers', () => {
+    expect(isUuid('23ccf1ec-a377-4b45-a401-11d28a8a1503')).toBe(true)
+    expect(isUuid('00000000-0000-0000-0000-000000000000')).toBe(false)
+    expect(isUuid('23ccf1ec-a377-4b45-7401-11d28a8a1503')).toBe(false)
+  })
+
   it('requires the exact current Exercise shape', () => {
     const base = {
       id: 'ex-1', name: 'Remada baixa', muscle: 'Costas', sets: '3', reps: '12', load: '30 kg',
@@ -20,6 +26,7 @@ describe('training JSON boundaries', () => {
     expect(validateQuestions([{ id: 'q1', label: 'Objetivo?', type: 'single', options: ['Força', 'Força'] }])).toBe(false)
     expect(validateQuestions([{ id: 'q1', label: 'Objetivo?', type: 'text', options: ['Não deveria existir'] }])).toBe(false)
     expect(validateQuestions([{ id: 'q1', label: 'Objetivo?', type: 'unknown' }])).toBe(false)
+    expect(validateQuestions([{ id: 'q1', label: 'Objetivo\u202E?', type: 'text' }])).toBe(false)
   })
 
   it('matches answer values to the immutable question contract', () => {
@@ -38,5 +45,7 @@ describe('training JSON boundaries', () => {
     expect(validateAnswers({ short: 'ok', multi: ['A', 'A'] }, questions)).toBe(false)
     expect(validateAnswers({ short: 'ok', scale: 4.5 }, questions)).toBe(false)
     expect(validateAnswers({ short: 'ok', unknown: 'valor' }, questions)).toBe(false)
+    expect(validateAnswers({ short: 'texto\u200boculto' }, questions)).toBe(false)
+    expect(validateAnswers({ short: 'ok', long: 'linha 1\nlinha 2' }, [...questions, { id: 'long', label: 'Detalhes', type: 'long' }])).toBe(true)
   })
 })

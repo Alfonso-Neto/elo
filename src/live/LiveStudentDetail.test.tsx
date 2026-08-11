@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { PrototypeProvider, usePrototype } from '../prototype-context'
+import { EloAppProvider, useEloApp } from '../app-state'
 import { MAX_SIGNAL_PAGE_SIZE, type PainReportLifecycleSummary } from '../signals'
 import type { TrainerStudentNote, WorkoutVersion } from './training'
 import { LiveStudentDetailScreen } from './LiveStudentDetail'
@@ -88,7 +88,7 @@ function noteFor(studentUserId: string, note: string): TrainerStudentNote {
 }
 
 function DetailHarness() {
-  const { selectedStudentId, setSelectedStudentId, toast } = usePrototype()
+  const { selectedStudentId, setSelectedStudentId, toast } = useEloApp()
   return <>
     <output>{`selected:${selectedStudentId || 'none'}`}</output>
     <output>{toast ? `${toast.title}:${toast.message}` : 'no-toast'}</output>
@@ -149,7 +149,7 @@ describe('live student detail privacy boundary', () => {
       items: [reportFor(options.studentUserId, options.studentUserId === marinaId ? 'Joelho da Marina' : 'Ombro da Bianca')],
       nextOffset: null,
     }))
-    render(<PrototypeProvider lockedRole="trainer"><DetailHarness /></PrototypeProvider>)
+    render(<EloAppProvider lockedRole="trainer"><DetailHarness /></EloAppProvider>)
 
     expect(await screen.findByRole('heading', { name: 'Marina Costa' })).toBeInTheDocument()
     expect(signals.listTrainerPainReports).toHaveBeenCalledWith(workspaceId, { studentUserId: marinaId, unresolvedOnly: false, limit: MAX_SIGNAL_PAGE_SIZE })
@@ -165,7 +165,7 @@ describe('live student detail privacy boundary', () => {
     training.getLatestWorkoutVersion.mockImplementation((_scope: unknown, studentUserId: string) => (
       studentUserId === marinaId ? slowMarina.promise : Promise.resolve(workoutFor(biancaId, 'Plano seguro da Bianca'))
     ))
-    render(<PrototypeProvider lockedRole="trainer"><DetailHarness /></PrototypeProvider>)
+    render(<EloAppProvider lockedRole="trainer"><DetailHarness /></EloAppProvider>)
 
     await waitFor(() => expect(training.getLatestWorkoutVersion).toHaveBeenCalledWith(expect.anything(), marinaId))
     fireEvent.click(screen.getByRole('button', { name: 'Selecionar Bianca' }))
@@ -185,7 +185,7 @@ describe('live student detail privacy boundary', () => {
     training.getLatestWorkoutVersion.mockImplementation((_scope: unknown, studentUserId: string) => (
       studentUserId === marinaId ? slowMarina.promise : Promise.resolve(workoutFor(biancaId, 'Plano da Bianca'))
     ))
-    render(<PrototypeProvider lockedRole="trainer"><DetailHarness /></PrototypeProvider>)
+    render(<EloAppProvider lockedRole="trainer"><DetailHarness /></EloAppProvider>)
 
     await waitFor(() => expect(training.getLatestWorkoutVersion).toHaveBeenCalledWith(expect.anything(), marinaId))
     fireEvent.click(screen.getByRole('button', { name: 'Selecionar Bianca' }))
@@ -203,12 +203,12 @@ describe('live student detail privacy boundary', () => {
   it('removes already-rendered private data immediately when trainer scope disappears', async () => {
     signals.listTrainerPainReports.mockResolvedValue({ items: [reportFor(marinaId, 'Segredo clínico da Marina')], nextOffset: null })
     training.listTrainerStudentNotes.mockResolvedValue({ items: [noteFor(marinaId, 'Observação privada da Marina')], nextCursor: null })
-    const view = render(<PrototypeProvider lockedRole="trainer"><DetailHarness /></PrototypeProvider>)
+    const view = render(<EloAppProvider lockedRole="trainer"><DetailHarness /></EloAppProvider>)
 
     expect(await screen.findByText('Segredo clínico da Marina · intensidade 4/10')).toBeInTheDocument()
     expect(screen.getByText('Observação privada da Marina')).toBeInTheDocument()
     auth.useAuth.mockReturnValue({ profile: null, membership: null })
-    view.rerender(<PrototypeProvider lockedRole="trainer"><DetailHarness /></PrototypeProvider>)
+    view.rerender(<EloAppProvider lockedRole="trainer"><DetailHarness /></EloAppProvider>)
 
     expect(screen.getByRole('heading', { name: 'Acesso profissional indisponível.' })).toBeInTheDocument()
     expect(screen.queryByText('Segredo clínico da Marina · intensidade 4/10')).not.toBeInTheDocument()
@@ -218,7 +218,7 @@ describe('live student detail privacy boundary', () => {
   it('keeps a late Marina note save from changing Bianca’s modal or reloading Marina', async () => {
     const slowSave = deferred<TrainerStudentNote>()
     training.createTrainerStudentNote.mockReturnValue(slowSave.promise)
-    render(<PrototypeProvider lockedRole="trainer"><DetailHarness /></PrototypeProvider>)
+    render(<EloAppProvider lockedRole="trainer"><DetailHarness /></EloAppProvider>)
     expect(await screen.findByRole('heading', { name: 'Marina Costa' })).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: /Adicionar observação/ }))
@@ -255,7 +255,7 @@ describe('live student detail privacy boundary', () => {
     training.createTrainerStudentNote
       .mockRejectedValueOnce(new Error('Falha temporária'))
       .mockResolvedValueOnce(noteFor(marinaId, 'Nota confirmada'))
-    render(<PrototypeProvider lockedRole="trainer"><DetailHarness /></PrototypeProvider>)
+    render(<EloAppProvider lockedRole="trainer"><DetailHarness /></EloAppProvider>)
     expect(await screen.findByRole('heading', { name: 'Marina Costa' })).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: /Adicionar observação/ }))

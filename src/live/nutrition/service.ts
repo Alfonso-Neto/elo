@@ -1,3 +1,5 @@
+import { parseIsoTimestamp } from '../../lib/iso-timestamp'
+import { hasUnsafeDisplayCharacters } from '../../lib/safe-text'
 import { requireSupabase } from '../../lib/supabase'
 import { idempotencyKeyPattern } from '../../signals'
 import type {
@@ -128,7 +130,7 @@ function rows(value: unknown) {
 
 function requiredString(row: Record<string, unknown>, key: string, maximum = Number.MAX_SAFE_INTEGER) {
   const value = row[key]
-  if (typeof value !== 'string' || value.length < 1 || value.length > maximum || value !== value.trim() || /[\u0000-\u001f\u007f-\u009f]/.test(value)) {
+  if (typeof value !== 'string' || value.length < 1 || value.length > maximum || value !== value.trim() || hasUnsafeDisplayCharacters(value)) {
     throw new NutritionDomainError('unavailable')
   }
   return value
@@ -153,7 +155,7 @@ function number(value: unknown, minimum: number, maximum: number) {
 
 function timestamp(row: Record<string, unknown>, key: string) {
   const value = requiredString(row, key, 50)
-  if (!Number.isFinite(Date.parse(value))) throw new NutritionDomainError('unavailable')
+  if (parseIsoTimestamp(value) === null) throw new NutritionDomainError('unavailable')
   return value
 }
 

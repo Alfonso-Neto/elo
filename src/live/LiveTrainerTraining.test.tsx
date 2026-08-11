@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { AssistantProposal } from '../assistant/assistant-service'
-import { PrototypeProvider, usePrototype } from '../prototype-context'
+import { EloAppProvider, useEloApp } from '../app-state'
 import type { AnamnesisAssignment, AnamnesisSubmission } from './training'
 import { LiveFormBuilderScreen, LiveTrainerFormsScreen, LiveWorkoutBuilderScreen } from './LiveTrainerTraining'
 
@@ -148,7 +148,7 @@ function arrangeBuilder() {
 }
 
 async function openReview() {
-  render(<PrototypeProvider lockedRole="trainer"><LiveWorkoutBuilderScreen /></PrototypeProvider>)
+  render(<EloAppProvider lockedRole="trainer"><LiveWorkoutBuilderScreen /></EloAppProvider>)
   expect(await screen.findByRole('heading', { name: /Treino em suas mãos/i })).toBeInTheDocument()
   expect(mocks.listEnrolledStudents).toHaveBeenCalledTimes(1)
   fireEvent.click(screen.getByRole('button', { name: /Abrir 1 ponto para revisar com o Copiloto/i }))
@@ -159,7 +159,7 @@ async function openReview() {
 }
 
 function DraftRouteHarness() {
-  const { navigate, page, workoutSessionDrafts } = usePrototype()
+  const { navigate, page, workoutSessionDrafts } = useEloApp()
   return <>
     <output>{`rascunhos:${Object.keys(workoutSessionDrafts).length}`}</output>
     {page === 'builder'
@@ -169,7 +169,7 @@ function DraftRouteHarness() {
 }
 
 function FormDraftRouteHarness() {
-  const { navigate, page, formSessionDrafts } = usePrototype()
+  const { navigate, page, formSessionDrafts } = useEloApp()
   return <>
     <output>{`form-rascunhos:${Object.keys(formSessionDrafts).length}`}</output>
     {page === 'form-builder'
@@ -220,7 +220,7 @@ describe('live workout builder copilot', () => {
   })
 
   it('restores a per-student session draft after navigation and clears it after publishing', async () => {
-    render(<PrototypeProvider lockedRole="trainer"><DraftRouteHarness /></PrototypeProvider>)
+    render(<EloAppProvider lockedRole="trainer"><DraftRouteHarness /></EloAppProvider>)
     expect(await screen.findByDisplayValue('100 kg')).toBeInTheDocument()
 
     fireEvent.change(screen.getByLabelText('Carga'), { target: { value: '82 kg' } })
@@ -258,7 +258,7 @@ describe('live workout builder copilot', () => {
       exercises: [{ id: 'leg', name: 'Leg press', muscle: 'Quadríceps', sets: '4', reps: '10', load: '100 kg', rest: '60s', tempo: '2-0-2', rir: '2', note: '' }],
     })
 
-    render(<PrototypeProvider lockedRole="trainer"><DraftRouteHarness /></PrototypeProvider>)
+    render(<EloAppProvider lockedRole="trainer"><DraftRouteHarness /></EloAppProvider>)
     expect(await screen.findByDisplayValue('100 kg')).toBeInTheDocument()
     fireEvent.change(screen.getByLabelText('Carga'), { target: { value: '82 kg' } })
 
@@ -278,7 +278,7 @@ describe('live workout builder copilot', () => {
     let resolvePublish!: (value: string) => void
     mocks.publishWorkoutVersion.mockReturnValueOnce(new Promise<string>((resolve) => { resolvePublish = resolve }))
 
-    render(<PrototypeProvider lockedRole="trainer"><DraftRouteHarness /></PrototypeProvider>)
+    render(<EloAppProvider lockedRole="trainer"><DraftRouteHarness /></EloAppProvider>)
     expect(await screen.findByDisplayValue('100 kg')).toBeInTheDocument()
     fireEvent.change(screen.getByLabelText('Carga'), { target: { value: '82 kg' } })
     fireEvent.click(screen.getByRole('button', { name: /^Publicar treino$/i }))
@@ -309,7 +309,7 @@ describe('live workout builder copilot', () => {
       .mockRejectedValueOnce(new Error('Falha temporária na publicação.'))
       .mockResolvedValueOnce('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa')
 
-    render(<PrototypeProvider lockedRole="trainer"><LiveWorkoutBuilderScreen /></PrototypeProvider>)
+    render(<EloAppProvider lockedRole="trainer"><LiveWorkoutBuilderScreen /></EloAppProvider>)
     expect(await screen.findByDisplayValue('100 kg')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: /^Publicar treino$/i }))
     expect(await screen.findByText('Falha temporária na publicação.')).toBeInTheDocument()
@@ -340,7 +340,7 @@ describe('live workout builder copilot', () => {
       exercises: [{ id: 'leg', name: 'Leg press', muscle: 'Quadríceps', sets: '4', reps: '10', load: '100 kg', rest: '60s', tempo: '2-0-2', rir: '2', note: '' }],
     })
 
-    render(<PrototypeProvider lockedRole="trainer"><LiveWorkoutBuilderScreen /></PrototypeProvider>)
+    render(<EloAppProvider lockedRole="trainer"><LiveWorkoutBuilderScreen /></EloAppProvider>)
     expect(await screen.findByDisplayValue('Inferiores')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: /Abrir 1 ponto para revisar com o Copiloto/i }))
     const dialog = screen.getByRole('dialog', { name: /Segundo olhar no rascunho/i })
@@ -369,7 +369,7 @@ describe('live anamnesis builder copilot', () => {
       .mockReturnValueOnce(new Promise<ReturnType<typeof formSuggestionResult>>((resolve) => { resolveFirst = resolve }))
       .mockResolvedValueOnce(formSuggestionResult('Sugestão do rascunho atual.', 'Como está sua recuperação hoje?', 'recovery'))
 
-    render(<PrototypeProvider lockedRole="trainer"><LiveFormBuilderScreen /></PrototypeProvider>)
+    render(<EloAppProvider lockedRole="trainer"><LiveFormBuilderScreen /></EloAppProvider>)
     expect(await screen.findByDisplayValue('Nova anamnese')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: /Revisar lacunas/i }))
     await waitFor(() => expect(mocks.requestFormQuestionSuggestions).toHaveBeenCalledTimes(1))
@@ -394,7 +394,7 @@ describe('live anamnesis builder copilot', () => {
       .mockResolvedValueOnce({ state: 'processing', runId: '88888888-8888-4888-8888-888888888888' })
       .mockResolvedValueOnce(formSuggestionResult('Revisão concluída sem mudar o rascunho.', 'Como está sua disposição?'))
 
-    render(<PrototypeProvider lockedRole="trainer"><LiveFormBuilderScreen /></PrototypeProvider>)
+    render(<EloAppProvider lockedRole="trainer"><LiveFormBuilderScreen /></EloAppProvider>)
     expect(await screen.findByDisplayValue('Nova anamnese')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: /Revisar lacunas/i }))
     expect(await screen.findByText(/revisão ainda está sendo preparada/i)).toBeInTheDocument()
@@ -408,7 +408,7 @@ describe('live anamnesis builder copilot', () => {
   it('renews a failed assignment key after accepted suggestions change the payload', async () => {
     mocks.assignAnamnesis.mockRejectedValueOnce(new Error('Falha temporária no envio.'))
 
-    render(<PrototypeProvider lockedRole="trainer"><LiveFormBuilderScreen /></PrototypeProvider>)
+    render(<EloAppProvider lockedRole="trainer"><LiveFormBuilderScreen /></EloAppProvider>)
     expect(await screen.findByDisplayValue('Nova anamnese')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: /^Enviar$/i }))
     expect(await screen.findByText('Falha temporária no envio.')).toBeInTheDocument()
@@ -430,7 +430,7 @@ describe('live anamnesis builder copilot', () => {
       { userId: secondStudentId, displayName: 'Bianca Souza', joinedAt: '2026-08-02T12:00:00.000Z' },
     ])
 
-    render(<PrototypeProvider lockedRole="trainer"><FormDraftRouteHarness /></PrototypeProvider>)
+    render(<EloAppProvider lockedRole="trainer"><FormDraftRouteHarness /></EloAppProvider>)
     const title = await screen.findByLabelText('TÍTULO DO FORMULÁRIO')
     fireEvent.change(title, { target: { value: 'Contexto da Marina' } })
     expect(screen.getByText('form-rascunhos:1')).toBeInTheDocument()
@@ -451,7 +451,7 @@ describe('live anamnesis builder copilot', () => {
   })
 
   it('normalizes ordinary edits into the exact server-valid question shape', async () => {
-    render(<PrototypeProvider lockedRole="trainer"><LiveFormBuilderScreen /></PrototypeProvider>)
+    render(<EloAppProvider lockedRole="trainer"><LiveFormBuilderScreen /></EloAppProvider>)
     expect(await screen.findByDisplayValue('Nova anamnese')).toBeInTheDocument()
     fireEvent.change(screen.getByLabelText('TÍTULO DO FORMULÁRIO'), { target: { value: '  Formulário seguro  ' } })
     fireEvent.click(screen.getByRole('button', { name: /Adicionar pergunta/i }))
@@ -480,7 +480,7 @@ describe('live anamnesis builder copilot', () => {
     let resolveAssignment!: (value: string) => void
     mocks.assignAnamnesis.mockReturnValueOnce(new Promise<string>((resolve) => { resolveAssignment = resolve }))
 
-    render(<PrototypeProvider lockedRole="trainer"><FormDraftRouteHarness /></PrototypeProvider>)
+    render(<EloAppProvider lockedRole="trainer"><FormDraftRouteHarness /></EloAppProvider>)
     const title = await screen.findByLabelText('TÍTULO DO FORMULÁRIO')
     fireEvent.click(screen.getByRole('button', { name: /^Enviar$/i }))
     await waitFor(() => expect(mocks.assignAnamnesis).toHaveBeenCalledTimes(1))
@@ -510,7 +510,7 @@ describe('live anamnesis builder copilot', () => {
       .mockRejectedValueOnce(new Error('Falha temporária no envio.'))
       .mockResolvedValueOnce('cccccccc-cccc-4ccc-8ccc-cccccccccccc')
 
-    render(<PrototypeProvider lockedRole="trainer"><LiveFormBuilderScreen /></PrototypeProvider>)
+    render(<EloAppProvider lockedRole="trainer"><LiveFormBuilderScreen /></EloAppProvider>)
     expect(await screen.findByDisplayValue('Nova anamnese')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: /^Enviar$/i }))
     expect(await screen.findByText('Falha temporária no envio.')).toBeInTheDocument()
@@ -526,7 +526,7 @@ describe('live anamnesis builder copilot', () => {
     let resolveAssignment!: (value: string) => void
     mocks.assignAnamnesis.mockReturnValueOnce(new Promise<string>((resolve) => { resolveAssignment = resolve }))
 
-    render(<PrototypeProvider lockedRole="trainer"><FormDraftRouteHarness /></PrototypeProvider>)
+    render(<EloAppProvider lockedRole="trainer"><FormDraftRouteHarness /></EloAppProvider>)
     const title = await screen.findByLabelText('TÍTULO DO FORMULÁRIO')
     fireEvent.change(title, { target: { value: 'Versão em envio' } })
     fireEvent.click(screen.getByRole('button', { name: /^Enviar$/i }))
@@ -564,7 +564,7 @@ describe('live anamnesis history isolation', () => {
       return { items: [], nextCursor: null }
     })
 
-    render(<PrototypeProvider lockedRole="trainer"><LiveTrainerFormsScreen /></PrototypeProvider>)
+    render(<EloAppProvider lockedRole="trainer"><LiveTrainerFormsScreen /></EloAppProvider>)
     await waitFor(() => expect(mocks.listAnamnesisAssignments).toHaveBeenCalledWith(expect.anything(), studentId, { limit: 30 }))
     fireEvent.change(screen.getByRole('combobox'), { target: { value: secondStudentId } })
     expect(await screen.findByText('Histórico atual da Bianca')).toBeInTheDocument()
@@ -598,7 +598,7 @@ describe('live anamnesis history isolation', () => {
       nextCursor: null,
     }))
 
-    render(<PrototypeProvider lockedRole="trainer"><LiveTrainerFormsScreen /></PrototypeProvider>)
+    render(<EloAppProvider lockedRole="trainer"><LiveTrainerFormsScreen /></EloAppProvider>)
     fireEvent.click(await screen.findByRole('button', { name: /Resposta da Marina/i }))
     expect(screen.getByRole('dialog', { name: /Respostas de Marina Costa/i })).toBeInTheDocument()
 

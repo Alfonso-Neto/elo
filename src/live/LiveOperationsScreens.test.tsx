@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { PrototypeProvider, usePrototype } from '../prototype-context'
+import { EloAppProvider, useEloApp } from '../app-state'
 import type { ThreadMessage } from './operations'
 import { LiveMessagesScreen } from './LiveOperationsScreens'
 
@@ -46,7 +46,7 @@ function deferred<T>() {
 
 function routeHarness() {
   function MessagesRouteHarness() {
-    const { messageSessionDrafts, navigate, page } = usePrototype()
+    const { messageSessionDrafts, navigate, page } = useEloApp()
     return <>
       <output>{`message-drafts:${Object.keys(messageSessionDrafts).length}`}</output>
       {page === 'messages'
@@ -93,7 +93,7 @@ describe('live conversation recovery', () => {
         joinedAt: null,
       }])
 
-    render(<PrototypeProvider lockedRole="trainer"><LiveMessagesScreen /></PrototypeProvider>)
+    render(<EloAppProvider lockedRole="trainer"><LiveMessagesScreen /></EloAppProvider>)
     fireEvent.click(await screen.findByRole('button', { name: 'Tentar novamente' }))
 
     await waitFor(() => expect(enrollment.listEnrolledStudents).toHaveBeenCalledTimes(2))
@@ -122,7 +122,7 @@ describe('live conversation recovery', () => {
       return Promise.resolve({ items: [message(biancaId, 'Mensagem correta da Bianca')], nextOffset: null })
     })
 
-    render(<PrototypeProvider lockedRole="trainer"><LiveMessagesScreen /></PrototypeProvider>)
+    render(<EloAppProvider lockedRole="trainer"><LiveMessagesScreen /></EloAppProvider>)
     expect(await screen.findByText('Contexto inicial da Marina', { selector: '.message p' })).toBeInTheDocument()
     await waitFor(() => expect(pollers).toHaveLength(1))
 
@@ -149,7 +149,7 @@ describe('live conversation recovery', () => {
       }
       return Promise.resolve({ items: [message(biancaId, 'Canal seguro da Bianca')], nextOffset: null })
     })
-    render(<PrototypeProvider lockedRole="trainer"><LiveMessagesScreen /></PrototypeProvider>)
+    render(<EloAppProvider lockedRole="trainer"><LiveMessagesScreen /></EloAppProvider>)
 
     expect(await screen.findByText('Mensagem recente da Marina', { selector: '.message p' })).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Carregar anteriores' }))
@@ -167,7 +167,7 @@ describe('live conversation recovery', () => {
 
   it('preserves independent drafts for each student while switching conversations', async () => {
     enrollment.listEnrolledStudents.mockResolvedValue(trainerRoster)
-    render(<PrototypeProvider lockedRole="trainer"><LiveMessagesScreen /></PrototypeProvider>)
+    render(<EloAppProvider lockedRole="trainer"><LiveMessagesScreen /></EloAppProvider>)
 
     const marinaDraft = await screen.findByRole('textbox', { name: 'Mensagem' })
     fireEvent.change(marinaDraft, { target: { value: 'Rascunho da Marina' } })
@@ -187,7 +187,7 @@ describe('live conversation recovery', () => {
     operations.sendTrainerThreadMessage
       .mockRejectedValueOnce(new Error('Falha temporária'))
       .mockResolvedValueOnce(message(marinaId, 'Mensagem confirmada'))
-    render(<PrototypeProvider lockedRole="trainer"><LiveMessagesScreen /></PrototypeProvider>)
+    render(<EloAppProvider lockedRole="trainer"><LiveMessagesScreen /></EloAppProvider>)
 
     const textarea = await screen.findByRole('textbox', { name: 'Mensagem' })
     fireEvent.change(textarea, { target: { value: 'Mensagem importante' } })
@@ -211,7 +211,7 @@ describe('live conversation recovery', () => {
     const pendingSend = deferred<ThreadMessage>()
     enrollment.listEnrolledStudents.mockResolvedValue(trainerRoster)
     operations.sendTrainerThreadMessage.mockReturnValue(pendingSend.promise)
-    render(<PrototypeProvider lockedRole="trainer"><LiveMessagesScreen /></PrototypeProvider>)
+    render(<EloAppProvider lockedRole="trainer"><LiveMessagesScreen /></EloAppProvider>)
 
     const textarea = await screen.findByRole('textbox', { name: 'Mensagem' })
     fireEvent.change(textarea, { target: { value: '  Texto   com espaços  ' } })
@@ -242,7 +242,7 @@ describe('live conversation recovery', () => {
     const pendingSend = deferred<ThreadMessage>()
     enrollment.listEnrolledStudents.mockResolvedValue([trainerRoster[0]])
     operations.sendTrainerThreadMessage.mockReturnValue(pendingSend.promise)
-    render(<PrototypeProvider lockedRole="trainer">{routeHarness()}</PrototypeProvider>)
+    render(<EloAppProvider lockedRole="trainer">{routeHarness()}</EloAppProvider>)
 
     const firstComposer = await screen.findByRole('textbox', { name: 'Mensagem' })
     fireEvent.change(firstComposer, { target: { value: 'Rascunho antigo' } })
@@ -284,7 +284,7 @@ describe('live conversation recovery', () => {
         nextOffset: 50,
       })
     })
-    render(<PrototypeProvider lockedRole="trainer"><LiveMessagesScreen /></PrototypeProvider>)
+    render(<EloAppProvider lockedRole="trainer"><LiveMessagesScreen /></EloAppProvider>)
 
     expect(await screen.findByText('Mensagem mais recente', { selector: '.message p' })).toBeInTheDocument()
     await waitFor(() => expect(pollers).toHaveLength(1))
@@ -314,7 +314,7 @@ describe('live conversation recovery', () => {
       senderUserId: marinaId,
       senderRole: 'student',
     })
-    render(<PrototypeProvider lockedRole="student"><LiveMessagesScreen /></PrototypeProvider>)
+    render(<EloAppProvider lockedRole="student"><LiveMessagesScreen /></EloAppProvider>)
 
     const textarea = await screen.findByRole('textbox', { name: 'Mensagem' })
     fireEvent.change(textarea, { target: { value: 'Mensagem da aluna' } })

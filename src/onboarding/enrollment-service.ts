@@ -48,6 +48,7 @@ export function normalizeInvitationCode(value: string) {
 }
 
 function firstRow(value: unknown): Record<string, unknown> | null {
+  if (Array.isArray(value) && value.length !== 1) return null
   const row = Array.isArray(value) ? value[0] : value
   return row && typeof row === 'object' ? row as Record<string, unknown> : null
 }

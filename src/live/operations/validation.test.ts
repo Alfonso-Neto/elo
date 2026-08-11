@@ -40,6 +40,8 @@ describe('operations validation', () => {
 
   it('rejects control characters and raw oversized input even when trimming could shorten it', () => {
     expect(() => normalizeSafeText('olá\nmundo', 'body', 1000)).toThrow()
+    expect(() => normalizeSafeText('Sala\u200boculta', 'place', 160)).toThrow()
+    expect(() => normalizeSafeText('texto\u202Einvertido', 'body', 1000)).toThrow()
     expect(() => normalizeSafeText(` ${'x'.repeat(1000)} `, 'body', 1000)).toThrow()
   })
 

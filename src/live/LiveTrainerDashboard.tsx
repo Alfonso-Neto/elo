@@ -4,7 +4,7 @@ import { Button, Eyebrow, SectionTitle } from '../components'
 import { useAuth } from '../auth/auth-context'
 import { listEnrolledStudents, type EnrolledStudent } from '../onboarding/enrollment-service'
 import { createSignalService, type PainReportLifecycleSummary } from '../signals'
-import { usePrototype } from '../prototype-context'
+import { useEloApp } from '../app-state'
 import { LivePainReportDrawer } from './LivePainReportDrawer'
 import './live.css'
 
@@ -57,7 +57,7 @@ type LoadPhase = 'loading' | 'ready' | 'error'
 
 export function LiveTrainerDashboard() {
   const { profile, membership } = useAuth()
-  const { navigate, setSelectedStudentId } = usePrototype()
+  const { navigate, setSelectedStudentId } = useEloApp()
   const [students, setStudents] = useState<EnrolledStudent[]>([])
   const [reports, setReports] = useState<PainReportLifecycleSummary[]>([])
   const [phase, setPhase] = useState<LoadPhase>('loading')
@@ -116,21 +116,21 @@ export function LiveTrainerDashboard() {
 
   return <div className="page enter live-dashboard">
     <section className="hero-grid trainer-hero">
-      <div className="hero-copy"><Eyebrow accent>{dateLabel(new Date()).toUpperCase()}</Eyebrow><h2>Bom dia, {firstName(profile?.displayName, 'professor')}.<br /><em>{queue.length} {queue.length === 1 ? 'contexto' : 'contextos'}</em> para o seu olhar.</h2><p>Somente sinais reais de alunos vinculados a {membership?.workspaceName}. Nenhum dado de demonstração entra aqui.</p></div>
+      <div className="hero-copy"><Eyebrow accent>{dateLabel(new Date()).toUpperCase()}</Eyebrow><h2>Bom dia, {firstName(profile?.displayName, 'professor')}.<br /><em>{queue.length} {queue.length === 1 ? 'contexto' : 'contextos'}</em> para o seu olhar.</h2><p>Sinais atuais dos alunos vinculados a {membership?.workspaceName}, organizados para revisão profissional.</p></div>
       <div className="signal-orbit" aria-hidden="true"><span>{String(queue.length).padStart(2, '0')}</span><small>SINAIS<br />RECENTES</small><i className="orbit-dot" /></div>
     </section>
 
     <section className="section-block" aria-live="polite">
-      <SectionTitle index="01" title="Precisam de você" copy="Alertas estruturados primeiro; depois intensidade e recência." action={<button className="text-link" onClick={() => void load()}><RefreshCw size={15} /> Atualizar</button>} />
+      <SectionTitle index="01" title="Precisam de você" copy="Alertas estruturados primeiro; depois intensidade e recência." action={<button type="button" className="text-link" onClick={() => void load()}><RefreshCw size={15} /> Atualizar</button>} />
       {queue.length === 0 && <div className="empty-state"><HeartPulse size={29} /><h3>Nenhum relato de dor recebido.</h3><p>Quando um aluno vinculado concluir o relato com consentimento, o sinal aparecerá aqui.</p><Button variant="secondary" onClick={() => navigate('students')}><Users size={16} /> Ver alunos vinculados</Button></div>}
-      {queue.length > 0 && <div className="attention-list">{queue.map((item, index) => <button className="attention-row" key={item.studentId} onClick={() => setSelectedReport(item.latest)}>
+      {queue.length > 0 && <div className="attention-list">{queue.map((item, index) => <button type="button" className="attention-row" key={item.studentId} onClick={() => setSelectedReport(item.latest)}>
         <span className={`status-line ${item.critical ? 'danger' : 'warning'}`} /><span className={`signal-avatar ${item.critical ? 'danger' : 'warning'}`}><HeartPulse size={17} /></span><span className="person"><strong>{item.studentName}</strong><small>{item.latest.region} · {item.latest.movement} · intensidade {item.latest.intensity}/10 · {timeLabel(item.latest.createdAt)}</small></span><span className={`tag ${item.critical ? 'danger' : item.latest.status === 'acknowledged' ? 'success' : 'warning'}`}>{item.critical ? 'Alerta' : item.latest.status === 'acknowledged' ? 'Em acompanhamento' : `${item.count} ${item.count === 1 ? 'relato' : 'relatos'}`}</span><ArrowRight size={18} /><span className="row-number">{String(index + 1).padStart(2, '0')}</span>
       </button>)}</div>}
     </section>
 
     <section className="lower-grid live-lower-grid">
-      <article className="surface-card live-operation-card"><SectionTitle index="02" title="Operação real" /><div><span><Users size={18} /><strong>{students.length}</strong><small>alunos ativos</small></span><span><HeartPulse size={18} /><strong>{reports.length}</strong><small>relatos em aberto</small></span><span><ShieldCheck size={18} /><strong>{criticalCount}</strong><small>com alerta</small></span></div><Button variant="secondary" onClick={() => navigate('students')}>Gerenciar vínculos <ArrowRight size={15} /></Button></article>
-      <button className="copilot-card" onClick={() => queue[0] ? openStudent(queue[0].studentId) : navigate('students')}><span className="copilot-icon"><Sparkles size={23} /></span><Eyebrow accent>COPILOTO · REVISÃO HUMANA</Eyebrow><h3>{queue[0] ? `Abrir o contexto de ${queue[0].studentName}.` : 'Pronto para o primeiro contexto.'}</h3><p>{queue[0] ? 'O copiloto propõe caminhos; você avalia, ajusta e confirma. Nada é publicado sozinho.' : 'Convide um aluno para começar o loop de dados com vínculo seguro.'}</p><span className="card-action">{queue[0] ? 'Revisar sinal' : 'Convidar aluno'} <ArrowRight size={16} /></span><span className="card-grid" /></button>
+      <article className="surface-card live-operation-card"><SectionTitle index="02" title="Operação do dia" /><div><span><Users size={18} /><strong>{students.length}</strong><small>alunos ativos</small></span><span><HeartPulse size={18} /><strong>{reports.length}</strong><small>relatos em aberto</small></span><span><ShieldCheck size={18} /><strong>{criticalCount}</strong><small>com alerta</small></span></div><Button variant="secondary" onClick={() => navigate('students')}>Gerenciar vínculos <ArrowRight size={15} /></Button></article>
+      <button type="button" className="copilot-card" onClick={() => queue[0] ? openStudent(queue[0].studentId) : navigate('students')}><span className="copilot-icon"><Sparkles size={23} /></span><Eyebrow accent>COPILOTO · REVISÃO HUMANA</Eyebrow><h3>{queue[0] ? `Abrir o contexto de ${queue[0].studentName}.` : 'Pronto para o primeiro contexto.'}</h3><p>{queue[0] ? 'O copiloto propõe caminhos; você avalia, ajusta e confirma. Nada é publicado sozinho.' : 'Convide um aluno para começar o loop de dados com vínculo seguro.'}</p><span className="card-action">{queue[0] ? 'Revisar sinal' : 'Convidar aluno'} <ArrowRight size={16} /></span><span className="card-grid" /></button>
     </section>
     {selectedReport && <LivePainReportDrawer report={selectedReport} studentName={students.find((student) => student.userId === selectedReport.studentUserId)?.displayName ?? 'Aluno vinculado'} onClose={() => setSelectedReport(null)} onChanged={async () => { await load(); setSelectedReport(null) }} onOpenCopilot={() => openStudent(selectedReport.studentUserId)} />}
   </div>

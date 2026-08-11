@@ -1,35 +1,60 @@
 import { lazy, Suspense, useEffect, useMemo, useState, type ComponentType } from 'react'
 import {
   BadgeCheck, Bell, CalendarDays, ClipboardList, Clock3, Dumbbell, FileCheck2, LayoutDashboard, LoaderCircle, Menu,
-  MessageCircle, LogOut, MoreHorizontal, RotateCcw, Salad, Search, Sparkles, UserRound, Users,
+  MessageCircle, LogOut, MoreHorizontal, Salad, Search, Sparkles, Users, WifiOff,
 } from 'lucide-react'
-import { Brand, Button, Drawer, Eyebrow, Modal } from './components'
+import { Brand, Button, Eyebrow, Modal } from './components'
 import { AuthLoadingScreen, AuthPage } from './auth/AuthPage'
 import { AuthProvider, useAuth } from './auth/auth-context'
-import { StudentEnrollmentOnboarding } from './onboarding/EnrollmentScreens'
+import { StudentEnrollmentOnboarding, TrainerStudentsEnrollment as StudentsScreen } from './onboarding/EnrollmentScreens'
 import { TrainerVerificationScreen } from './onboarding/TrainerVerificationScreen'
 import { resolveEnrollmentAccess } from './onboarding/enrollment-access'
 import { listEnrolledStudents, type EnrolledStudent } from './onboarding/enrollment-service'
-import { PrototypeProvider, usePrototype } from './prototype-context'
-import { students } from './data'
-import type { Page, Role } from './types'
+import { clearLegacyBrowserStorage, EloAppProvider, useEloApp } from './app-state'
+import type { Page } from './types'
 
-const TrainerDashboard = lazy(() => import('./trainer-screens').then((module) => ({ default: module.TrainerDashboard })))
-const StudentsScreen = lazy(() => import('./trainer-screens').then((module) => ({ default: module.StudentsScreen })))
-const StudentDetailScreen = lazy(() => import('./trainer-screens').then((module) => ({ default: module.StudentDetailScreen })))
-const CopilotScreen = lazy(() => import('./trainer-screens').then((module) => ({ default: module.CopilotScreen })))
-const WorkoutBuilderScreen = lazy(() => import('./trainer-screens').then((module) => ({ default: module.WorkoutBuilderScreen })))
-const FormsScreen = lazy(() => import('./trainer-screens').then((module) => ({ default: module.FormsScreen })))
-const FormBuilderScreen = lazy(() => import('./trainer-screens').then((module) => ({ default: module.FormBuilderScreen })))
-const ScheduleScreen = lazy(() => import('./trainer-screens').then((module) => ({ default: module.ScheduleScreen })))
-const MessagesScreen = lazy(() => import('./trainer-screens').then((module) => ({ default: module.MessagesScreen })))
-const StudentTodayScreen = lazy(() => import('./student-screens').then((module) => ({ default: module.StudentTodayScreen })))
-const StudentWorkoutScreen = lazy(() => import('./student-screens').then((module) => ({ default: module.StudentWorkoutScreen })))
-const StudentAssistantScreen = lazy(() => import('./student-screens').then((module) => ({ default: module.StudentAssistantScreen })))
-const NutritionScreen = lazy(() => import('./student-screens').then((module) => ({ default: module.NutritionScreen })))
-const StudentScheduleScreen = lazy(() => import('./student-screens').then((module) => ({ default: module.StudentScheduleScreen })))
-const StudentFormScreen = lazy(() => import('./student-screens').then((module) => ({ default: module.StudentFormScreen })))
+const loadTrainerDashboard = () => import('./live/LiveTrainerDashboard')
+const loadStudentDetail = () => import('./live/LiveStudentDetail')
+const loadTrainerCopilot = () => import('./live/LiveTrainerCopilot')
+const loadTrainerTraining = () => import('./live/LiveTrainerTraining')
+const loadOperationsScreens = () => import('./live/LiveOperationsScreens')
+const loadStudentTraining = () => import('./live/LiveStudentTraining')
+const loadStudentAssistant = () => import('./student-assistant-screen')
+const loadNutrition = () => import('./live/LiveNutritionScreen')
+
+const TrainerDashboard = lazy(() => loadTrainerDashboard().then((module) => ({ default: module.LiveTrainerDashboard })))
+const StudentDetailScreen = lazy(() => loadStudentDetail().then((module) => ({ default: module.LiveStudentDetailScreen })))
+const CopilotScreen = lazy(() => loadTrainerCopilot().then((module) => ({ default: module.LiveTrainerCopilot })))
+const WorkoutBuilderScreen = lazy(() => loadTrainerTraining().then((module) => ({ default: module.LiveWorkoutBuilderScreen })))
+const FormsScreen = lazy(() => loadTrainerTraining().then((module) => ({ default: module.LiveTrainerFormsScreen })))
+const FormBuilderScreen = lazy(() => loadTrainerTraining().then((module) => ({ default: module.LiveFormBuilderScreen })))
+const ScheduleScreen = lazy(() => loadOperationsScreens().then((module) => ({ default: module.LiveTrainerScheduleScreen })))
+const MessagesScreen = lazy(() => loadOperationsScreens().then((module) => ({ default: module.LiveMessagesScreen })))
+const StudentTodayScreen = lazy(() => loadStudentTraining().then((module) => ({ default: module.LiveStudentTodayScreen })))
+const StudentWorkoutScreen = lazy(() => loadStudentTraining().then((module) => ({ default: module.LiveStudentWorkoutScreen })))
+const StudentAssistantScreen = lazy(() => loadStudentAssistant().then((module) => ({ default: module.StudentAssistantScreen })))
+const NutritionScreen = lazy(() => loadNutrition().then((module) => ({ default: module.LiveNutritionScreen })))
+const StudentScheduleScreen = lazy(() => loadOperationsScreens().then((module) => ({ default: module.LiveStudentScheduleScreen })))
+const StudentFormScreen = lazy(() => loadStudentTraining().then((module) => ({ default: module.LiveStudentFormScreen })))
 const LiveNotificationsButton = lazy(() => import('./live/LiveNotifications').then((module) => ({ default: module.LiveNotificationsButton })))
+
+const routeChunkLoaders: Partial<Record<Page, () => Promise<unknown>>> = {
+  dashboard: loadTrainerDashboard,
+  'student-detail': loadStudentDetail,
+  copilot: loadTrainerCopilot,
+  builder: loadTrainerTraining,
+  forms: loadTrainerTraining,
+  'form-builder': loadTrainerTraining,
+  schedule: loadOperationsScreens,
+  messages: loadOperationsScreens,
+  today: loadStudentTraining,
+  workout: loadStudentTraining,
+  assistant: loadStudentAssistant,
+  nutrition: loadNutrition,
+  'student-form': loadStudentTraining,
+}
+
+const preloadPage = (page: Page) => { void routeChunkLoaders[page]?.() }
 
 type NavItem = { page: Page | 'more'; label: string; icon: ComponentType<{ size?: number; strokeWidth?: number }> }
 
@@ -53,34 +78,48 @@ const titleForPage: Partial<Record<Page, string>> = {
   today: 'Hoje', workout: 'Meu treino', assistant: 'Assistente', nutrition: 'Nutrição', 'student-form': 'Anamnese',
 }
 
-function RoleSwitch({ compact = false }: { compact?: boolean }) {
-  const { role, switchRole } = usePrototype()
-  return <div className={compact ? 'role-switch compact' : 'role-switch'} role="group" aria-label="Alternar experiência"><button className={role === 'trainer' ? 'active' : ''} onClick={() => switchRole('trainer')} aria-label={compact ? 'Alternar para Treinador' : 'Treinador'} aria-pressed={role === 'trainer'}><UserRound size={15} />{!compact && 'Treinador'}</button><button className={role === 'student' ? 'active' : ''} onClick={() => switchRole('student')} aria-label={compact ? 'Alternar para Aluna' : 'Aluna'} aria-pressed={role === 'student'}><Dumbbell size={15} />{!compact && 'Aluna'}</button></div>
-}
-
 function Sidebar() {
-  const { role, page, navigate, painReports, messages, setSelectedStudentId, resetPrototype } = usePrototype()
-  const { isDemo, profile, membership, professionalAccess, signOut, leaveDemo } = useAuth()
+  const { role, page, navigate } = useEloApp()
+  const { profile, membership, professionalAccess, signOut } = useAuth()
   const nav = role === 'trainer' ? trainerNav : studentNav
-  const openStudents = new Set(painReports.filter((item) => item.status === 'open').map((item) => item.studentId)).size
-  const unreadMessages = messages.at(-1)?.sender !== role ? 1 : 0
-  const displayName = profile?.displayName ?? (role === 'trainer' ? 'André Lima' : 'Marina Costa')
+  const displayName = profile?.displayName ?? 'Conta Elo'
   const initials = displayName.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join('').toUpperCase()
-  const workspaceTitle = profile ? (membership?.workspaceName ?? 'SEU ESPAÇO') : role === 'trainer' ? 'STUDIO ANDRÉ' : 'MARINA COSTA'
-  const workspaceDetail = profile
-    ? role === 'student'
-      ? `Com ${membership?.trainerName ?? 'seu professor'}`
-      : professionalAccess?.mode === 'verified' ? 'Identidade profissional confirmada' : 'Conta de homologação'
-    : role === 'trainer' ? '28 alunos ativos' : 'Acompanhamento ativo'
+  const workspaceTitle = membership?.workspaceName ?? 'SEU ESPAÇO'
+  const workspaceDetail = role === 'student'
+    ? `Com ${membership?.trainerName ?? 'seu professor'}`
+    : professionalAccess?.mode === 'verified' ? 'Identidade profissional confirmada' : 'Acesso profissional temporário'
   const professionalLabel = professionalAccess?.mode === 'verified'
     ? 'CREF VERIFICADO'
     : professionalAccess?.mode === 'temporary_homologation' ? 'ACESSO TEMPORÁRIO' : null
-  return <aside className="sidebar"><Brand /><div className="workspace-label"><span>{workspaceTitle.toUpperCase()}</span><small>{workspaceDetail}</small>{role === 'trainer' && professionalLabel && <b className={`professional-status ${professionalAccess?.mode === 'temporary_homologation' ? 'temporary' : ''}`}>{professionalAccess?.mode === 'verified' ? <BadgeCheck size={10} /> : <Clock3 size={10} />}{professionalLabel}</b>}</div><nav aria-label="Navegação principal">{nav.map(({ page: target, label, icon: Icon }) => <button key={target} className={page === target || (target === 'students' && page === 'student-detail') || (target === 'forms' && page === 'form-builder') ? 'nav-item active' : 'nav-item'} onClick={() => { if (isDemo && (target === 'copilot' || target === 'builder' || target === 'forms')) setSelectedStudentId('marina'); if (target !== 'more') navigate(target) }} aria-label={label} title={label} aria-current={page === target ? 'page' : undefined}><Icon size={19} strokeWidth={1.8} /><span>{label}</span>{isDemo && label === 'Alunos' && openStudents > 0 && <b>{openStudents}</b>}{isDemo && label === 'Conversas' && unreadMessages > 0 && <b>{unreadMessages}</b>}</button>)}</nav><div className="sidebar-bottom">{isDemo ? <><RoleSwitch /><button className="reset-button" onClick={resetPrototype}><RotateCcw size={15} /> Reiniciar demonstração</button><button className="account-action" onClick={leaveDemo}><LogOut size={15} /> Sair da demonstração</button></> : <button className="account-action" onClick={() => void signOut()}><LogOut size={15} /> Sair da conta</button>}<div className="sidebar-profile"><span className="avatar">{initials}</span><div><strong>{displayName}</strong><small>{role === 'trainer' ? isDemo ? 'Professor · demonstração' : professionalAccess?.mode === 'verified' ? 'Professor · CREF verificado' : 'Professor · homologação temporária' : 'Aluno · conta ativa'}</small></div><MoreHorizontal size={17} /></div></div></aside>
+  return <aside className="sidebar">
+    <Brand />
+    <div className="workspace-label">
+      <span>{workspaceTitle.toUpperCase()}</span>
+      <small>{workspaceDetail}</small>
+      {role === 'trainer' && professionalLabel && <b className={`professional-status ${professionalAccess?.mode === 'temporary_homologation' ? 'temporary' : ''}`}>
+        {professionalAccess?.mode === 'verified' ? <BadgeCheck size={10} /> : <Clock3 size={10} />}{professionalLabel}
+      </b>}
+    </div>
+    <nav aria-label="Navegação principal">{nav.map(({ page: target, label, icon: Icon }) => <button type="button"
+      key={target}
+      className={page === target || (target === 'students' && page === 'student-detail') || (target === 'forms' && page === 'form-builder') ? 'nav-item active' : 'nav-item'}
+      onMouseEnter={() => { if (target !== 'more') preloadPage(target) }}
+      onFocus={() => { if (target !== 'more') preloadPage(target) }}
+      onClick={() => { if (target !== 'more') navigate(target) }}
+      aria-label={label}
+      title={label}
+      aria-current={page === target ? 'page' : undefined}
+    ><Icon size={19} strokeWidth={1.8} /><span>{label}</span></button>)}</nav>
+    <div className="sidebar-bottom">
+      <button type="button" className="account-action" onClick={() => void signOut()}><LogOut size={15} /> Sair da conta</button>
+      <div className="sidebar-profile"><span className="avatar">{initials}</span><div><strong>{displayName}</strong><small>{role === 'trainer' ? professionalAccess?.mode === 'verified' ? 'Professor · CREF verificado' : 'Professor · homologação temporária' : 'Aluno · conta ativa'}</small></div><MoreHorizontal size={17} /></div>
+    </div>
+  </aside>
 }
 
 function ProfessionalAccessBanner() {
-  const { isDemo, professionalAccess } = useAuth()
-  if (isDemo || professionalAccess?.mode !== 'temporary_homologation') return null
+  const { professionalAccess } = useAuth()
+  if (professionalAccess?.mode !== 'temporary_homologation') return null
   const expires = professionalAccess.temporaryAccessExpiresAt
     ? new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(professionalAccess.temporaryAccessExpiresAt))
     : 'em breve'
@@ -88,19 +127,13 @@ function ProfessionalAccessBanner() {
 }
 
 function Topbar() {
-  const { role, page, navigate, painReports, formSubmitted, workoutSent, messages, setSelectedStudentId } = usePrototype()
-  const { isDemo } = useAuth()
+  const { role, page, navigate, setSelectedStudentId } = useEloApp()
   const [searchOpen, setSearchOpen] = useState(false)
-  const [notificationsOpen, setNotificationsOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [liveStudents, setLiveStudents] = useState<EnrolledStudent[]>([])
   const [liveSearchState, setLiveSearchState] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
-  const matches = students.filter((student) => student.name.toLowerCase().includes(query.toLowerCase()))
   const liveMatches = liveStudents.filter((student) => student.displayName.toLowerCase().includes(query.toLowerCase()))
   const studentMatches = studentNav.filter((item) => item.label.toLowerCase().includes(query.trim().toLowerCase()))
-  const openPainCount = painReports.filter((item) => item.status === 'open').length
-  const incomingMessage = messages.at(-1)?.sender !== role
-  const hasNotifications = isDemo && (role === 'trainer' ? openPainCount > 0 || formSubmitted || incomingMessage : workoutSent || !formSubmitted || incomingMessage)
   useEffect(() => {
     const openSearch = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') { event.preventDefault(); setSearchOpen(true) }
@@ -109,7 +142,7 @@ function Topbar() {
     return () => window.removeEventListener('keydown', openSearch)
   }, [])
   useEffect(() => {
-    if (!searchOpen || isDemo || role !== 'trainer') return
+    if (!searchOpen || role !== 'trainer') return
     let active = true
     setLiveSearchState('loading')
     void listEnrolledStudents().then((roster) => {
@@ -120,29 +153,52 @@ function Topbar() {
       setLiveSearchState('error')
     })
     return () => { active = false }
-  }, [isDemo, role, searchOpen])
-  return <><header className="topbar"><div className="mobile-brand"><Brand /></div><div className="topbar-title"><Eyebrow>{role === 'trainer' ? 'PAINEL DO TREINADOR' : 'EXPERIÊNCIA DA ALUNA'}</Eyebrow><h1>{titleForPage[page]}</h1></div><div className="top-actions"><button className="top-search" onClick={() => setSearchOpen(true)}><Search size={17} /><span>{role === 'trainer' ? 'Buscar aluno...' : 'Buscar no Elo...'}</span><kbd>⌘ K</kbd></button>{isDemo ? <button className="icon-button" onClick={() => setNotificationsOpen(true)} aria-label="Abrir notificações"><Bell size={19} />{hasNotifications && <i />}</button> : <Suspense fallback={<button className="icon-button" aria-label="Carregando atualizações" disabled><Bell size={19} /></button>}><LiveNotificationsButton /></Suspense>}{role === 'trainer' ? <Button onClick={() => { if (isDemo) setSelectedStudentId('marina'); navigate('builder') }}><Dumbbell size={16} /> Nova prescrição</Button> : isDemo ? <RoleSwitch compact /> : null}</div></header>
-    {searchOpen && <Modal title={role === 'trainer' ? 'Buscar na sua base' : 'Onde você quer chegar?'} eyebrow="BUSCA RÁPIDA" onClose={() => setSearchOpen(false)} size="small"><label className="search-field modal-search"><Search size={17} /><span className="sr-only">{role === 'trainer' ? 'Buscar aluno' : 'Buscar seção no Elo'}</span><input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder={role === 'trainer' ? 'Nome do aluno...' : 'Treino, agenda, conversa...'} /></label>{role === 'trainer' ? <div className="quick-results">{isDemo ? matches.map((student) => <button key={student.id} onClick={() => { setSelectedStudentId(student.id); setSearchOpen(false); navigate('student-detail') }}><span className={`person-avatar ${student.status}`}>{student.initials}</span><span><strong>{student.name}</strong><small>{student.summary}</small></span></button>) : <>{liveSearchState === 'loading' && <p className="mini-empty">Carregando alunos vinculados...</p>}{liveSearchState === 'error' && <p className="mini-empty">A busca não abriu agora.</p>}{liveSearchState === 'ready' && liveMatches.map((student) => <button key={student.userId} onClick={() => { setSelectedStudentId(student.userId); setSearchOpen(false); navigate('student-detail') }}><span className="person-avatar">{student.displayName.split(/\s+/).slice(0,2).map((part) => part[0]).join('').toUpperCase()}</span><span><strong>{student.displayName}</strong><small>Aluno vinculado ao workspace</small></span></button>)}{liveSearchState === 'ready' && !liveMatches.length && <p className="mini-empty">Nenhum aluno vinculado encontrado.</p>}</>}</div> : <div className="quick-results">{studentMatches.map(({ page: target, label, icon: Icon }) => <button key={target} onClick={() => { if (target !== 'more') navigate(target); setSearchOpen(false) }}><span className="quick-icon"><Icon size={17} /></span><span><strong>{label}</strong><small>Abrir seção</small></span></button>)}{!studentMatches.length && <p className="mini-empty">Nenhuma seção encontrada.</p>}</div>}</Modal>}
-    {isDemo && notificationsOpen && <Drawer title="O que mudou" eyebrow="NOTIFICAÇÕES" onClose={() => setNotificationsOpen(false)}><div className="notification-list">{role === 'trainer' && openPainCount > 0 && <button onClick={() => { setSelectedStudentId('marina'); navigate('copilot'); setNotificationsOpen(false) }}><span className="signal-avatar danger"><HeartIcon /></span><span><strong>{openPainCount} relatos de Marina</strong><small>Dor no joelho · sinal aberto</small></span></button>}{role === 'student' && workoutSent && <button onClick={() => { navigate('workout'); setNotificationsOpen(false) }}><span className="signal-avatar danger"><HeartIcon /></span><span><strong>André revisou seu contexto</strong><small>O treino foi ajustado com base no seu relato</small></span></button>}{((role === 'trainer' && formSubmitted) || (role === 'student' && !formSubmitted)) && <button onClick={() => { if (role === 'trainer') setSelectedStudentId('marina'); navigate(role === 'trainer' ? 'forms' : 'student-form'); setNotificationsOpen(false) }}><span className="signal-avatar blue"><FileCheck2 size={17} /></span><span><strong>{formSubmitted ? 'Anamnese respondida' : 'Anamnese aguardando resposta'}</strong><small>Contexto inicial · Marina Costa</small></span></button>}{incomingMessage && <button onClick={() => { navigate('messages'); setNotificationsOpen(false) }}><span className="signal-avatar warning"><MessageCircle size={17} /></span><span><strong>Nova mensagem</strong><small>Conversa de acompanhamento</small></span></button>}{!hasNotifications && <p className="mini-empty">Tudo em dia por aqui.</p>}</div></Drawer>}
+  }, [role, searchOpen])
+  return <>
+    <header className="topbar">
+      <div className="mobile-brand"><Brand /></div>
+      <div className="topbar-title"><Eyebrow>{role === 'trainer' ? 'PAINEL DO TREINADOR' : 'EXPERIÊNCIA DO ALUNO'}</Eyebrow><h1>{titleForPage[page]}</h1></div>
+      <div className="top-actions">
+        <button type="button" className="top-search" onClick={() => setSearchOpen(true)}><Search size={17} /><span>{role === 'trainer' ? 'Buscar aluno...' : 'Buscar no Elo...'}</span><kbd>⌘ K</kbd></button>
+        <Suspense fallback={<button type="button" className="icon-button" aria-label="Carregando atualizações" disabled><Bell size={19} /></button>}><LiveNotificationsButton /></Suspense>
+        {role === 'trainer' && <Button onMouseEnter={() => preloadPage('builder')} onFocus={() => preloadPage('builder')} onClick={() => navigate('builder')}><Dumbbell size={16} /> Nova prescrição</Button>}
+      </div>
+    </header>
+    {searchOpen && <Modal title={role === 'trainer' ? 'Buscar na sua base' : 'Onde você quer chegar?'} eyebrow="BUSCA RÁPIDA" onClose={() => setSearchOpen(false)} size="small">
+      <label className="search-field modal-search"><Search size={17} /><span className="sr-only">{role === 'trainer' ? 'Buscar aluno' : 'Buscar seção no Elo'}</span><input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder={role === 'trainer' ? 'Nome do aluno...' : 'Treino, agenda, conversa...'} /></label>
+      {role === 'trainer' ? <div className="quick-results">
+        {liveSearchState === 'loading' && <p className="mini-empty">Carregando alunos vinculados...</p>}
+        {liveSearchState === 'error' && <p className="mini-empty">A busca não abriu agora.</p>}
+        {liveSearchState === 'ready' && liveMatches.map((student) => <button type="button" key={student.userId} onPointerDown={() => preloadPage('student-detail')} onClick={() => { setSelectedStudentId(student.userId); setSearchOpen(false); navigate('student-detail') }}><span className="person-avatar">{student.displayName.split(/\s+/).slice(0,2).map((part) => part[0]).join('').toUpperCase()}</span><span><strong>{student.displayName}</strong><small>Aluno vinculado ao workspace</small></span></button>)}
+        {liveSearchState === 'ready' && !liveMatches.length && <p className="mini-empty">Nenhum aluno vinculado encontrado.</p>}
+      </div> : <div className="quick-results">{studentMatches.map(({ page: target, label, icon: Icon }) => <button type="button" key={target} onClick={() => { if (target !== 'more') navigate(target); setSearchOpen(false) }}><span className="quick-icon"><Icon size={17} /></span><span><strong>{label}</strong><small>Abrir seção</small></span></button>)}{!studentMatches.length && <p className="mini-empty">Nenhuma seção encontrada.</p>}</div>}
+    </Modal>}
   </>
 }
 
-function HeartIcon() { return <span aria-hidden="true">!</span> }
-
 function BottomNav() {
-  const { role, page, navigate, setSelectedStudentId, resetPrototype } = usePrototype()
-  const { isDemo, signOut, leaveDemo } = useAuth()
+  const { role, page, navigate } = useEloApp()
+  const { signOut } = useAuth()
   const [moreOpen, setMoreOpen] = useState(false)
   const nav = role === 'trainer'
     ? [...trainerNav.slice(0, 3), trainerNav[4], { page: 'more' as const, label: 'Mais', icon: Menu }]
     : [...studentNav.slice(0, 4), { page: 'more' as const, label: 'Mais', icon: Menu }]
   const extra = role === 'trainer' ? [trainerNav[3], trainerNav[5], trainerNav[6]] : [studentNav[4], studentNav[5], studentNav[6]]
   const extraActive = extra.some((item) => item.page === page || (item.page === 'forms' && page === 'form-builder'))
-  return <><nav className="bottom-nav" aria-label="Navegação móvel">{nav.map(({ page: target, label, icon: Icon }) => { const active = page === target || (target === 'more' && extraActive); return <button key={target} className={active ? 'active' : ''} aria-current={active ? 'page' : undefined} onClick={() => { if (target === 'more') { setMoreOpen(true); return }; if (isDemo && (target === 'copilot' || target === 'builder')) setSelectedStudentId('marina'); navigate(target) }}><Icon size={20} /><small>{label}</small></button> })}</nav>{moreOpen && <Modal title="Mais no Elo" eyebrow={isDemo ? 'NAVEGAÇÃO E DEMONSTRAÇÃO' : 'NAVEGAÇÃO E CONTA'} onClose={() => setMoreOpen(false)} size="small"><div className="mobile-more-menu">{extra.map(({ page: target, label, icon: Icon }) => <button key={target} onClick={() => { if (isDemo && (target === 'builder' || target === 'forms')) setSelectedStudentId('marina'); if (target !== 'more') navigate(target); setMoreOpen(false) }}><Icon size={19} /><span>{label}</span></button>)}{isDemo ? <><RoleSwitch /><button className="reset-mobile" onClick={() => { resetPrototype(); setMoreOpen(false) }}><RotateCcw size={18} /> Reiniciar demonstração</button><button className="reset-mobile" onClick={() => { leaveDemo(); setMoreOpen(false) }}><LogOut size={18} /> Sair da demonstração</button></> : <button className="reset-mobile" onClick={() => { void signOut(); setMoreOpen(false) }}><LogOut size={18} /> Sair da conta</button>}</div></Modal>}</>
+  return <>
+    <nav className="bottom-nav" aria-label="Navegação móvel">{nav.map(({ page: target, label, icon: Icon }) => {
+      const active = page === target || (target === 'more' && extraActive)
+      return <button type="button" key={target} className={active ? 'active' : ''} aria-current={active ? 'page' : undefined} onPointerDown={() => { if (target !== 'more') preloadPage(target) }} onFocus={() => { if (target !== 'more') preloadPage(target) }} onClick={() => { if (target === 'more') { setMoreOpen(true); return }; navigate(target) }}><Icon size={20} /><small>{label}</small></button>
+    })}</nav>
+    {moreOpen && <Modal title="Mais no Elo" eyebrow="NAVEGAÇÃO E CONTA" onClose={() => setMoreOpen(false)} size="small"><div className="mobile-more-menu">
+      {extra.map(({ page: target, label, icon: Icon }) => <button type="button" key={target} onPointerDown={() => { if (target !== 'more') preloadPage(target) }} onFocus={() => { if (target !== 'more') preloadPage(target) }} onClick={() => { if (target !== 'more') navigate(target); setMoreOpen(false) }}><Icon size={19} /><span>{label}</span></button>)}
+      <button type="button" className="reset-mobile" onClick={() => { void signOut(); setMoreOpen(false) }}><LogOut size={18} /> Sair da conta</button>
+    </div></Modal>}
+  </>
 }
 
 function Toast() {
-  const { toast } = usePrototype()
+  const { toast } = useEloApp()
   if (!toast) return null
   return <div className="toast" role="status"><span><CheckIcon /></span><div><strong>{toast.title}</strong><p>{toast.message}</p></div></div>
 }
@@ -153,8 +209,23 @@ function RouteLoading() {
   return <div className="page route-loading" role="status"><LoaderCircle className="spin" size={24} /><p>Preparando esta área...</p></div>
 }
 
+export function NetworkStatusBanner() {
+  const [offline, setOffline] = useState(() => !navigator.onLine)
+  useEffect(() => {
+    const updateStatus = () => setOffline(!navigator.onLine)
+    window.addEventListener('online', updateStatus)
+    window.addEventListener('offline', updateStatus)
+    return () => {
+      window.removeEventListener('online', updateStatus)
+      window.removeEventListener('offline', updateStatus)
+    }
+  }, [])
+  if (!offline) return null
+  return <aside className="network-status" role="status" aria-live="polite"><WifiOff size={16} /><span><strong>Sem conexão</strong> Alterações e atualizações ficarão indisponíveis até a rede voltar.</span></aside>
+}
+
 function AppContent() {
-  const { role, page } = usePrototype()
+  const { role, page } = useEloApp()
   const pageTitle = titleForPage[page]
   useEffect(() => { document.title = `${pageTitle} · Elo` }, [pageTitle])
   const screen = useMemo(() => {
@@ -170,22 +241,31 @@ function AppContent() {
 }
 
 function AppGate() {
-  const { loading, session, profile, membership, professionalAccess, isDemo } = useAuth()
+  const { loading, session, profile, membership, professionalAccess } = useAuth()
   const [, refreshRoute] = useState(0)
   useEffect(() => {
     const updateRoute = () => refreshRoute((version) => version + 1)
     window.addEventListener('hashchange', updateRoute)
-    return () => window.removeEventListener('hashchange', updateRoute)
+    window.addEventListener('popstate', updateRoute)
+    return () => {
+      window.removeEventListener('hashchange', updateRoute)
+      window.removeEventListener('popstate', updateRoute)
+    }
   }, [])
   const route = window.location.hash.replace('#/', '')
   const resetRoute = route === 'redefinir-senha'
   if (loading) return <AuthLoadingScreen />
-  if (!isDemo && (resetRoute || !session || !profile)) return <AuthPage />
-  const access = resolveEnrollmentAccess({ isDemo, role: profile?.accountRole ?? null, membership, professionalAccess })
+  if (resetRoute || !session || !profile) return <AuthPage />
+  const access = resolveEnrollmentAccess({ role: profile.accountRole, membership, professionalAccess })
   if (access === 'student-onboarding') return <StudentEnrollmentOnboarding />
   if (access === 'trainer-verification' || (route === 'verificacao' && professionalAccess?.mode === 'temporary_homologation')) return <TrainerVerificationScreen />
   if (access === 'blocked') return <AuthPage />
-  return <PrototypeProvider lockedRole={isDemo ? undefined : profile?.accountRole}><AppContent /></PrototypeProvider>
+  // Remount all in-memory drafts if Auth ever replaces the active identity
+  // without an intermediate signed-out render.
+  return <EloAppProvider key={profile.id} lockedRole={profile.accountRole}><AppContent /></EloAppProvider>
 }
 
-export function App() { return <AuthProvider><AppGate /></AuthProvider> }
+export function App() {
+  useEffect(() => { clearLegacyBrowserStorage() }, [])
+  return <AuthProvider><NetworkStatusBanner /><AppGate /></AuthProvider>
+}

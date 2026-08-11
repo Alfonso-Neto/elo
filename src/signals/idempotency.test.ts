@@ -16,10 +16,15 @@ describe('signal idempotency', () => {
   })
 
   it('never falls back to non-cryptographic randomness', () => {
+    const source = {
+      randomUUID: () => 'e1f2a3b4-5c6d-47e8-9f01-23456789abcd',
+    } as Pick<Crypto, 'randomUUID'>
     expect(() => createIdempotencyKey('pain-report', null)).toThrow(SignalDomainError)
     expect(() => createIdempotencyKey('invalid prefix!', {
       randomUUID: () => 'e1f2a3b4-5c6d-47e8-9f01-23456789abcd',
     } as Pick<Crypto, 'randomUUID'>)).toThrow(SignalDomainError)
+    expect(() => createIdempotencyKey(`a${'b'.repeat(31)}`, source)).not.toThrow()
+    expect(() => createIdempotencyKey(`a${'b'.repeat(32)}`, source)).toThrow(SignalDomainError)
   })
 })
 

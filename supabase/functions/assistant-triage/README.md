@@ -12,9 +12,10 @@ The Supabase client uses the hosted `SUPABASE_PUBLISHABLE_KEYS.default` value
 ## Current status
 
 The function, shared validators, SQL lifecycle and Deno tests are versioned in
-this repository. They have not been deployed or exercised against a live
-Supabase project from this checkout. Passing web tests does not validate the
-remote secret attestation, provider call, CORS configuration or database RLS.
+this repository. The function has been deployed and authenticated smoke-tested
+in the dedicated Elo homologation project with a publishable key and caller
+JWT. This evidence does not authorize production or replace provider, CORS,
+cross-workspace and lifecycle acceptance for each released commit.
 
 ## Required secrets
 

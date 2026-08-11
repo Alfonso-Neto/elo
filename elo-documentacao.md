@@ -1,256 +1,249 @@
-# Elo — Documentação do Produto
+# Elo — documentação do produto
 
-> Plataforma de gestão para personal trainers e seus alunos, com um **copiloto de IA que aumenta o julgamento do profissional em vez de substituí-lo.**
+> Fonte de verdade sobre a proposta, os limites e a direção do Elo. Procedimentos de implantação e aceite ficam em [HOMOLOGACAO.md](./HOMOLOGACAO.md).
 
-**Status:** conceito + protótipo navegável — **MVP fechado** (pronto para validação de mercado)
-**Documento:** v3 · 14/07/2026 *(inclui construtor de treino, copiloto flutuante, demonstrações de movimento e anamnese)*
-**Nome provisório:** Elo *(vínculo — a ligação aluno↔professor e o elo entre a dor do aluno e a decisão do professor. Trocável.)*
+**Status:** MVP técnico implementado localmente; implantação e aceite remoto pendentes.
 
----
+**Nome:** Elo é o vínculo entre aluno e professor e entre um sinal percebido e uma decisão profissional.
 
-## 1. Resumo em uma frase
+## 1. Identidade e promessa
 
-Elo reúne agenda, treino, nutrição, chat e pagamento num único app para personal trainers — mas o que o diferencia não é juntar tudo isso (o mercado já faz), e sim um **copiloto de IA que captura as dores do aluno de forma estruturada e ajuda o professor a raciocinar sobre a prescrição, sem entregar o treino pronto no automático.**
+Elo é uma aplicação de acompanhamento para personal trainers e seus alunos. Ela reúne o contexto produzido entre sessões — dor, esforço percebido, execução, faltas, respostas e conversas — e o coloca diante do professor no momento de decidir.
 
----
+A promessa do produto é **preservar o vínculo e melhorar a qualidade do acompanhamento sem terceirizar o julgamento profissional para a IA**.
 
-## 2. Contexto e problema
+Elo não se posiciona como gerador automático de treinos. Seu centro é um ciclo de sinais, reflexão, decisão humana, publicação e acompanhamento.
 
-### O que já existe
-O mercado brasileiro de apps para personal trainer é maduro e saturado. MFIT, Tecnofit, TreinoAI, NextFit, Mobitrainer, HexFit e outros já oferecem prescrição de treino, biblioteca de vídeos, avaliação física, chat interno, gestão financeira com Pix, agenda e, em alguns casos, nutrição e IA de prescrição.
+## 2. Público
 
-**Conclusão importante:** "juntar tudo num app só" **não é diferencial** — é o padrão atual. Um produto que apenas replique MFIT + funcionalidades já existentes entra num mercado lotado sem motivo para o profissional trocar.
+### Professor
 
-### A dor real (do cliente pagante = o professor)
-O personal trainer sente atrito diário ao operar seu negócio com ferramentas soltas: planilha + WhatsApp para fichas, Calendly para agenda, cobrança manual por Pix, vídeos no YouTube, conversas misturadas com a vida pessoal. É uma dor **profissional e desejada** — ele quer resolver e já paga por soluções.
+O público primário é o personal trainer que valoriza individualização, contexto e controle sobre a prescrição. A hipótese inicial é que esse perfil aceita dedicar atenção à decisão quando a tecnologia reduz a dispersão das informações e torna os sinais acionáveis.
 
-### A brecha
-Todos os concorrentes correm na mesma direção: **IA que entrega o treino pronto (autopilot).** Isso ignora dois pontos:
-1. O medo real do personal de ser substituído/commoditizado pela IA.
-2. O ponto fraco de todo mundo: **retenção do aluno** (o professor já é bem servido; quem abandona é o aluno).
+O professor é o provável cliente pagante, mas modelo comercial, faixa de preço e disposição a pagar ainda precisam ser validados.
 
-Elo ataca essa brecha com um posicionamento oposto — **copiloto, não autopilot** — e mira um nicho específico.
+### Aluno
 
----
+O aluno é participante essencial do ciclo. Ele precisa de clareza sobre o treino, uma forma simples de registrar o que sentiu e confiança de que seu relato chegará ao profissional sem ser convertido em diagnóstico ou decisão automática.
 
-## 3. Público-alvo (nicho)
+## 3. Problema
 
-**Primário:** o personal trainer que valoriza **qualidade acima de volume** — o profissional que se orgulha da individualização e não quer que um robô prescreva por ele. Poucos alunos, ticket mais alto, consultoria online + presencial.
+O acompanhamento entre professor e aluno frequentemente se fragmenta entre mensagens, planilhas, agendas e memória. Sinais importantes podem chegar sem estrutura, fora de contexto ou tarde demais para orientar a próxima decisão.
 
-Esse recorte é intencional. A filosofia copiloto **não serve para todo mundo**: o personal de alto volume (100+ alunos) quer economizar horas e prefere que a IA faça *por* ele. Para esse perfil, "fazer o professor pensar mais" é um defeito, não uma qualidade. Por isso o copiloto **define o nicho** em vez de ser um recurso genérico.
+As hipóteses de problema que o Elo busca validar são:
 
-**Secundário (usuário final, não pagante):** o aluno de consultoria, que ganha um assistente que o ajuda durante o treino e dá voz às suas dores de forma que realmente chega ao professor.
+- profissionais perdem tempo reunindo o histórico antes de ajustar um treino;
+- alunos não encontram um caminho claro para comunicar dor, dificuldade ou esforço;
+- automatizar a prescrição pode reduzir a confiança de profissionais que valorizam autoria e responsabilidade;
+- um ciclo visível de atenção e resposta pode fortalecer percepção de cuidado e continuidade.
 
----
+Essas afirmações orientam pesquisa e produto; não são conclusões universais sobre o mercado.
 
-## 4. O diferencial: copiloto + loop de dados
+## 4. Ciclo central
 
-### 4.1 Filosofia "copiloto, não autopilot"
-Onde os concorrentes automatizam a decisão, Elo **estrutura a informação e devolve a decisão ao professor**. Na tela de prescrição, a IA:
-1. **Reúne os sinais** que o aluno gerou nas últimas semanas (dores, RPE, faltas, feedbacks).
-2. **Faz perguntas de raciocínio** ao professor ("antes de repetir o agachamento, como você quer conduzir o membro inferior?").
-3. **Oferece caminhos com o *porquê* e o *risco* de cada um** — nunca uma resposta única.
-4. **Monta um rascunho editável** que o professor revisa e envia. A prescrição continua sendo dele.
-
-Mensagem central para o profissional: *"você continua sendo o especialista; a IA só te dá superpoder."*
-
-### 4.2 O loop de dados (o moat de verdade)
-O ativo defensável **não é a palavra "IA"** — qualquer um copia isso em seis meses. O ativo é o **loop**:
-
-```
-Aluno relata dor/feedback  →  Assistente transforma em DADO ESTRUTURADO
-        →  Dado alimenta o Copiloto do professor
-        →  Professor decide com mais contexto
-        →  Resultado do treino gera novo feedback  →  (repete)
+```text
+Relato ou feedback do aluno
+            ↓
+Sinal estruturado, consentido e protegido
+            ↓
+Contexto apresentado ao professor
+            ↓
+Proposta inerte do Copiloto
+            ↓
+Decisão e edição pelo profissional
+            ↓
+Publicação separada de uma nova versão
+            ↓
+Execução e novo feedback
 ```
 
-Ao longo de meses, isso cria uma **base proprietária de dor-do-aluno mapeada** que nenhum concorrente tem. Dado proprietário + histórico que melhora a prescrição com o tempo = o tipo de diferencial que se sustenta e aumenta o custo de troca (quanto mais o professor usa, mais valioso fica e mais difícil é sair).
+O valor esperado está na continuidade desse ciclo. O histórico pode reduzir perda de contexto e custo de troca, mas qualquer vantagem competitiva baseada nele é uma hipótese a validar. Os dados pertencem às pessoas e organizações legitimamente responsáveis por eles, sujeitos a consentimento, finalidade, acesso e direitos aplicáveis. Elo não reivindica propriedade sobre dados de saúde e não presume autorização para usá-los no treinamento de modelos.
 
----
-
-## 5. Funcionalidades por perfil
+## 5. Jornadas por papel
 
 ### 5.1 Professor
-| Área | O que faz |
-|---|---|
-| **Início** | Painel do dia: alunos que "precisam de você" (dores, feedbacks, pagamentos), agenda de hoje, resumo financeiro. |
-| **Alunos** | Base ordenada por *atenção* (prioridade), não por ordem alfabética. Status por aluno: em dia, feedback novo, pagamento atrasado, prioridade. |
-| **Copiloto** *(centro)* | Assistente de prescrição. Surface de sinais → perguntas de raciocínio → rascunho editável. É a tela-assinatura. |
-| **Construtor de treino** | Editor detalhado: cada exercício abre séries, reps, carga, descanso, cadência, RIR e observação para o aluno. Miniatura animada do movimento em cada exercício e biblioteca para adicionar novos. |
-| **Copiloto flutuante (a "bolinha")** | Assistente que acompanha o professor enquanto ele monta o treino. Aponta lembretes e contradições (ver §6.2) sem alterar nada sozinho. |
-| **Anamnese** | Galeria de 8 modelos prontos (geral, PAR-Q, emagrecimento, hipertrofia, corrida, reabilitação, saúde da mulher, idosos) e um **construtor dinâmico** para criar formulários de nicho, com 7 tipos de pergunta e sugestões do copiloto (ver §6.4). |
-| **Agenda** | Semana com sessões presenciais, online e em grupo. Horários livres viram slots agendáveis pelo aluno. |
-| **Chat** | Conversas separadas do WhatsApp pessoal. Ninguém troca número. |
-| **Financeiro** | Recebido / a receber / atrasado. Cobrança automática por Pix e cartão, sem perseguir inadimplente no zap. |
+
+1. Cria e confirma sua conta, define o workspace e envia dados para verificação profissional.
+2. Após verificação de CREF — ou concessão temporária de homologação claramente identificada — convida um aluno.
+3. Consulta o painel do dia e identifica sinais que merecem atenção.
+4. Abre o histórico consentido do aluno e solicita apoio do Copiloto quando necessário.
+5. Avalia perguntas, justificativas, incertezas e mudanças sugeridas.
+6. Aceita apenas o que fizer sentido em um rascunho editável.
+7. Publica explicitamente uma nova versão do treino.
+8. Acompanha execução e feedback para orientar o ciclo seguinte.
+
+O professor também pode operar anamneses, agenda, conversas e notificações. Na área de nutrição, visualiza somente o resumo autorizado; não cria nem altera plano nutricional.
 
 ### 5.2 Aluno
-| Área | O que faz |
+
+1. Cria e confirma sua conta e aceita um convite compatível com seu e-mail.
+2. Concede ou retira consentimentos específicos conforme a jornada.
+3. Consulta o treino publicado e as orientações de cada exercício.
+4. Registra execução, esforço e feedback.
+5. Relata dor por um fluxo estruturado de local, momento e intensidade.
+6. Recebe atualizações do professor e acompanha a continuidade do caso.
+
+O aluno também pode responder anamneses, conversar com o professor, solicitar horários e visualizar nutrição proveniente de parceiro habilitado.
+
+## 6. Copiloto e Assistente
+
+### 6.1 Comportamento do Copiloto
+
+O Copiloto serve ao professor. Ele reúne um contexto autorizado e minimizado, apresenta uma proposta estruturada e explicita perguntas, justificativas, riscos e incertezas. Mudanças de treino ficam limitadas a operações conhecidas e verificáveis.
+
+Regras invariáveis:
+
+1. A proposta não executa mutações nem publica conteúdo.
+2. Aceitar uma sugestão altera somente o rascunho da sessão.
+3. O profissional pode editar, rejeitar ou dispensar a proposta.
+4. A decisão fica associada à proposta para auditoria.
+5. A publicação é posterior, explícita, versionada e idempotente.
+6. Uma resposta se torna obsoleta se o aluno ou o rascunho mudar durante a solicitação.
+
+Frase-âncora: **“Eu organizo sinais e proponho caminhos. Quem decide é você.”**
+
+### 6.2 Comportamento do Assistente
+
+O Assistente serve ao aluno durante o treino e no relato de dor. Ele ajuda a explicar a informação disponível, conduz a coleta estruturada e sinaliza o professor. Não diagnostica, prescreve, recomenda tratamento, interpreta-se como atendimento profissional nem promete resposta imediata.
+
+Sinais de alerta exigem uma orientação de segurança compatível com o fluxo definido, sem transformar a interface em serviço de emergência.
+
+## 7. Confiança, segurança e responsabilidade
+
+### Decisão humana
+
+Elo é copiloto, não autopilot. A IA não possui ferramentas ou autoridade para salvar, publicar ou enviar prescrições. Uma proposta persistida continua inerte até que uma pessoa autorizada registre sua decisão.
+
+### Consentimento e minimização
+
+Dados de dor, anamnese e outros sinais de saúde são sensíveis. O acesso depende de consentimento vigente, finalidade específica e vínculo válido. O provedor de IA recebe somente o contexto necessário; identificadores de autorização permanecem na fronteira do Elo.
+
+### Isolamento e falha fechada
+
+Papéis, associação ao workspace e acesso ao aluno são impostos no servidor por RLS e RPCs. O sistema deve falhar fechado diante de configuração ausente, consentimento expirado, papel incompatível, vínculo inválido, origem não permitida ou indisponibilidade do backend.
+
+### Verificação profissional
+
+O envio de dados de CREF não equivale a aprovação. O acesso profissional protegido depende de revisão por operação confiável. Uma concessão temporária pode existir apenas para homologação: deve ser atribuível, limitada ao professor e workspace, ter prazo curto, ser revogável por evento append-only e aparecer como temporária — nunca como CREF verificado.
+
+### Rastreabilidade
+
+Relatos relevantes e versões publicadas são imutáveis; tentativas repetidas usam chaves de idempotência; propostas e decisões podem ser correlacionadas. Notificações não devem expor conteúdo sensível.
+
+### Limites profissionais
+
+- O Elo não oferece diagnóstico, tratamento ou atendimento emergencial.
+- O personal trainer não prescreve dieta pelo produto.
+- Planos nutricionais entram por integração confiável com profissional habilitado e consentimento específico; o professor permanece em leitura.
+- Uso com dados reais depende de revisão jurídica, base legal e operação compatível com a LGPD.
+- Dados sensíveis não são considerados ativos proprietários do Elo nem material livre para treinamento de modelos.
+
+## 8. Escopo funcional atual
+
+| Domínio | Capacidade |
 |---|---|
-| **Hoje** | Treino do dia, próxima sessão, plano alimentar e um atalho de "como você está?" para reportar dores. |
-| **Treino** | Exercícios com marcação de concluído, barra de progresso e feedback. Cada exercício abre uma ficha completa com séries/reps/carga/descanso/cadência, o recado do professor e uma **demonstração animada do movimento** (ver §6.3). |
-| **Assistente** *(centro)* | Ajuda durante o treino ("como faço este exercício?"), registra dores de forma estruturada (local → quando → intensidade 0-10) e avisa o professor. |
-| **Nutrição** | Plano do dia com refeições e macros. Montado por nutricionista parceiro (ver §8, ponto legal). |
-| **Chat** | Conversa direta com o professor. |
-| **Pagamento** | Plano, forma de pagamento, Pix automático, código Pix e histórico. |
-| **Anamnese** | Recebe a anamnese enviada pelo professor e responde no app (texto, escolhas, escala, sim/não, número). As respostas ficam anexadas ao perfil e alimentam o histórico. |
+| Identidade | autenticação, sessão, papéis, workspaces, convites e verificação profissional |
+| Acompanhamento | painel, perfil do aluno, histórico e sinais de atenção |
+| Dor e IA | relato estruturado, triagem mediada, propostas do Copiloto e decisões auditáveis |
+| Treino | biblioteca, rascunho, editor detalhado, publicação versionada, execução e feedback |
+| Anamnese | modelos, construtor de perguntas, atribuição e respostas imutáveis |
+| Agenda | slots, solicitações, confirmação, recusa e cancelamento |
+| Conversas | canal privado por vínculo, paginação, idempotência e notificações discretas |
+| Nutrição | ingestão por parceiro confiável, consentimento, plano e acompanhamento em leitura para o professor |
+| Notificações | feed orientado por papel e recibos de leitura |
 
----
+As demonstrações de exercícios são vetoriais e servem como referência visual. Não substituem orientação individualizada. Conteúdo próprio ou licenciado em vídeo continua sendo uma decisão futura.
 
-## 6. Especificação do Copiloto (tela-chave)
+## 9. Estado atual e maturidade
 
-Fluxo do protótipo, passo a passo:
+### Implementado localmente
 
-1. **Cabeçalho de contexto** — seleciona o aluno e declara a postura: *"Você prescreve. Eu só organizo o que a Marina te contou."*
-2. **Sinais** — cartões com o que o aluno gerou, com fonte e frequência:
-   - Dor no joelho no agachamento — 3× em 14 dias (registrada pelo assistente)
-   - RPE médio de perna 9/10 (marcado como "muito puxado" 4×)
-   - Faltou 2 sessões esta semana (padrão novo)
-3. **Pergunta de raciocínio 1** — como conduzir o membro inferior, com 3 opções, cada uma com **POR QUÊ** e **risco**:
-   - Manter agachamento com menos carga/amplitude
-   - Trocar por leg press + extensora
-   - Focar estabilizadores antes (tratar a causa)
-4. **Pergunta de raciocínio 2** (revelada após a escolha) — ajustar volume por causa das faltas.
-5. **Rascunho editável** — treino montado com marcações do que foi *substituído/adicionado*, botão "revisar e enviar", e a assinatura: *"Eu junto os sinais e sugiro caminhos. A prescrição é sua."*
+- interface web mobile-first com jornadas de professor e aluno;
+- contratos de autenticação, persistência, RLS/RPC, consentimento e auditoria versionados;
+- Edge Function de triagem e Copiloto com validação de entrada e saída;
+- verificações automatizadas de documentação, fonte, SQL, TypeScript, testes, estilos e build.
 
-**Princípio de UX:** nada é enviado no automático. Toda sugestão vem com justificativa e contrapartida. O professor sempre dá a última palavra.
+### Pendente de aceite
 
-### 6.1 Construtor de treino detalhado
+- aplicar o conjunto versionado de migrations em um Supabase exclusivo de homologação;
+- configurar e atestar os segredos da Edge Function;
+- completar o ciclo principal com contas reais de teste;
+- provar o isolamento com um segundo workspace;
+- validar recuperação, conectividade, acessibilidade, responsividade e procedimentos operacionais;
+- concluir revisão jurídica/LGPD antes de usar dados reais.
 
-A partir do rascunho do copiloto, o professor abre o **editor detalhado**. Cada exercício expande e permite definir séries, repetições, carga, descanso, cadência, RIR e uma observação escrita para o aluno. É possível renomear o treino, adicionar exercícios de uma biblioteca e pré-visualizar exatamente como o aluno verá. Tudo o que o professor preenche aqui é o que aparece na ficha do aluno — sem retrabalho, sem "traduzir" a planilha depois.
+“Implementado” significa presente no repositório e verificável localmente. Não significa implantado, aceito remotamente ou pronto para produção. A matriz e os critérios operacionais estão em [HOMOLOGACAO.md](./HOMOLOGACAO.md).
 
-### 6.2 Copiloto flutuante (a "bolinha")
+## 10. Hipóteses de produto e negócio
 
-Enquanto o professor monta o treino, um copiloto flutuante (uma bolinha no canto da tela, com contador) acompanha o que ele está fazendo. Ao tocar, abre um painel que **provoca o raciocínio** em vez de corrigir por conta própria. Três tipos de intervenção:
+As seguintes ideias ainda exigem evidência com usuários e operação real:
 
-- **Lembrete de contexto** — cruza o treino com o histórico do aluno. Ex.: "A Marina relatou dor no joelho 3× e você não incluiu aquecimento de mobilidade. Foi proposital?" — com as ações *"Adicionar mobilidade"* ou *"Foi proposital"*.
-- **Provocação de raciocínio** — aponta desequilíbrios. Ex.: "2 exercícios de quadríceps e 1 de posterior; para joelho sensível, reforçar posterior costuma proteger. Quer rever a proporção?"
-- **Lembrete técnico** — confere coerência com o objetivo. Ex.: "Descanso de 60s na extensora — para hipertrofia, 60–90s é o esperado. Só confirmando que não foi um deslize."
+- profissionais orientados à individualização preferem apoio à decisão a prescrição automática;
+- o ciclo de sinais aumenta percepção de cuidado, adesão ou retenção;
+- a organização do contexto economiza tempo suficiente para justificar adoção;
+- professores pagariam por uma assinatura que inclua o aluno sem cobrança direta;
+- um nicho inicial — como corrida, reabilitação, idosos ou saúde da mulher — pode tornar a proposta mais clara;
+- histórico útil e portável pode aumentar valor acumulado sem criar aprisionamento indevido.
 
-Regras de comportamento que definem o produto:
-1. Sempre em tom de **pergunta**, nunca de ordem.
-2. **Não altera nada sozinho.** Quando o professor aceita uma sugestão, o item entra marcado como *"sugerido pelo copiloto, confirmado por você"*.
-3. O contador diminui conforme o professor resolve cada ponto — e ao final some, deixando explícito que a decisão foi toda dele.
-4. Frase-âncora: *"Eu só te lembro e te faço pensar. Quem decide é você."*
-
-Isto é a materialização mais concreta da tese copiloto-não-autopilot: a IA fica **ao lado** do professor no momento da decisão, não no lugar dele.
-
-### 6.3 Demonstração de movimento por exercício
-
-Cada exercício tem uma **demonstração animada da execução correta**, visível tanto na ficha do aluno quanto na miniatura de cada exercício no construtor do professor. Serve para reduzir dúvida de execução (o ponto onde o aluno mais erra sozinho) e para o professor conferir o movimento na hora de prescrever.
-
-**Nota de implementação:** no protótipo, as demonstrações são animações vetoriais desenhadas em código (sem dependência externa e sem material de terceiros). No produto real, elas seriam substituídas por **vídeos filmados**. Aqui há uma decisão de negócio: os vídeos podem ser gravados pelo próprio professor (reforça o toque pessoal e vira mais um diferencial), licenciados de uma biblioteca pronta, ou um misto. O lugar do vídeo já está previsto na interface.
-
-### 6.4 Anamnese: modelos prontos + construtor dinâmico
-
-A anamnese resolve dois públicos ao mesmo tempo:
-
-- **Modelos prontos** para a maioria: 8 formulários já montados (geral, PAR-Q, emagrecimento, hipertrofia, corrida/endurance, reabilitação, saúde da mulher/gestante, terceira idade). O professor abre, ajusta o que quiser e envia. Cobre o grosso dos casos sem trabalho.
-- **Construtor dinâmico** para o nicho: cria uma anamnese do zero (ou a partir de um modelo) com 7 tipos de pergunta — texto curto, texto longo, escolha única, múltipla escolha, escala 0–10, sim/não e número. Cada pergunta é editável, com opções configuráveis; dá para adicionar, remover e pré-visualizar exatamente como o aluno responde.
-
-O **copiloto aparece também aqui**, coerente com a tese do produto: ele oferece "perguntas que costumam faltar" (sono, estresse, histórico de lesões, medicação, restrição alimentar, disponibilidade) como sugestões que o professor adiciona **se fizer sentido** — nada entra sozinho. Do lado do aluno, o formulário é respondido dentro do app e as respostas viram dado estruturado no perfil, reforçando o mesmo loop de dados que sustenta o diferencial (§4.2): quanto mais o aluno responde e relata, mais contexto o professor acumula.
-
-**Ponto de atenção (reforço do §8):** a anamnese coleta **dados sensíveis de saúde**. Consentimento explícito, base legal e armazenamento seguro (LGPD) são obrigatórios desde a primeira versão.
-
----
-
-## 7. Modelo de negócio (hipótese)
-
-- **Quem paga:** o personal trainer (B2B2C). O aluno usa grátis, dentro da assinatura do professor.
-- **Formato:** assinatura mensal (SaaS). Referência de mercado: ~R$ 89/mês em média, com faixas por número de alunos.
-- **Freemium sugerido:** grátis até 3 alunos para reduzir atrito de entrada; planos pagos por volume acima disso.
-- **Custo marginal:** tende a zero por cliente novo (SaaS), exceto conteúdo (biblioteca de vídeos) e suporte.
-
----
-
-## 8. Riscos e pontos de atenção
-
-### Regulatórios / legais (atenção séria)
-- **Nutrição:** no Brasil, **personal trainer não pode prescrever dieta** — só nutricionista (CFN). A parte de nutrição **precisa** operar via nutricionista parceiro/integrado, nunca como prescrição feita pelo personal. No protótipo isso já aparece como "plano montado por Nutri. parceira".
-- **Dados de saúde (LGPD):** dor, avaliação física e histórico são **dados sensíveis**. Exige consentimento explícito, base legal, e cuidado redobrado no armazenamento e no uso para treinar qualquer modelo.
-- **Pagamentos:** processar mensalidades exige gateway (ex.: parceiro de pagamento) e conformidade — não construir do zero.
-
-### De produto / mercado
-- **Mercado saturado:** o diferencial precisa ser sentido, não só descrito. Sem o copiloto e o nicho, é só mais um app.
-- **A hipótese central ainda não foi validada** (ver §9): pode ser que a maioria queira "monta pra mim".
-- **Migração é o gargalo, não a retenção:** tirar o professor do MFIT/Tecnofit exige um motivo forte. A retenção tende a ser boa *depois* que ele migra (custo de troca alto), mas a aquisição é difícil.
-
----
-
-## 9. Plano de validação (antes de construir de verdade)
-
-**Hipótese a testar primeiro** (com 10–15 personais reais):
-> "Você prefere uma IA que monta o treino pra você, ou uma que te mostra as dores do aluno e te ajuda a decidir?"
-
-- Se a maioria responder **"monta pra mim"** → o copiloto é um nicho pequeno; repensar posicionamento.
-- Se uma parcela relevante disser **"prefiro decidir, não confio em treino de robô"** → há uma dor real e desatendida; vale construir.
-
-**Próximos passos sugeridos (7 dias):**
-1. Entrevistar 10–15 personais e mapear o que os *irrita* nas ferramentas atuais.
-2. Definir 1 nicho concreto e testar uma landing page de lista de espera (medir interesse real).
-3. Só então especificar o MVP — que **não é "tudo isso junto"**, e sim a UMA coisa que Elo faz melhor que os outros.
-
-**Critério de go/no-go sugerido:** se X personais entrarem na lista de espera / demonstrarem intenção de pagar em 2 semanas, avança.
-
----
-
-## 10. Escopo de MVP recomendado
-
-Não construir o app inteiro de uma vez. Ordem sugerida:
-
-**Fase 1 — provar o diferencial (o resto já existe no mercado):**
-- Assistente do aluno que estrutura a dor (local → quando → intensidade).
-- Copiloto do professor que exibe esses sinais e sugere caminhos com justificativa.
-- Prescrição de treino editável.
-
-**Fase 2 — tornar operável:**
-- Chat interno, agenda com slots, pagamento via gateway parceiro.
-
-**Fase 3 — completar:**
-- Nutrição (via nutricionista parceiro), avaliação física/anamnese, biblioteca de vídeos, relatórios de evolução.
-
-O motivo da ordem: as fases 2 e 3 são commodity — copiar não te diferencia. A fase 1 é a única que cria moat, então é onde o esforço inicial deve ir.
-
----
+Preço, planos, freemium, aquisição e parcerias não estão definidos. Custos de IA, infraestrutura, comunicação, suporte, conteúdo e conformidade devem ser medidos antes de qualquer modelo comercial.
 
 ## 11. Direção visual
 
-Deliberadamente fora do visual "app de academia" (preto + neon). Identidade de **consultoria premium**, coerente com o nicho de qualidade:
+Elo evita a estética genérica de academia baseada apenas em preto e neon. A direção é de consultoria próxima, calma e premium:
 
-- **Cores:** verde-pinho (`#1b5e43`) como primária (saúde, crescimento, calma), coral-apricot (`#f2764a`) como ação/energia, sobre papel verde-claro (`#eef1ea`).
-- **Tipografia:** Bricolage Grotesque (títulos, momentos de destaque), Inter (interface), Space Mono (números/métricas — dá cara de "dado de coaching").
-- **Elemento-assinatura:** o Copiloto, com tratamento visual próprio (painel escuro, pulso animado) que comunica "estou pensando com você", não "decidindo por você".
+- verde-pinho como base de confiança e crescimento;
+- coral-apricot para ação e energia;
+- superfícies claras com contraste acessível;
+- tipografia expressiva nos momentos editoriais e neutra na interface;
+- dados e estados com hierarquia clara, sem transformar alerta em ansiedade;
+- tratamento próprio do Copiloto para comunicar reflexão, não autoridade.
+
+A experiência deve permanecer responsiva, navegável por teclado, compatível com redução de movimento e clara em estados de carregamento, erro e perda de conectividade.
+
+## 12. Roadmap orientado a risco
+
+### Agora: provar o ciclo e a fronteira
+
+- implantar em ambiente isolado e completar o aceite remoto;
+- validar dor → proposta → decisão → versão → feedback;
+- demonstrar isolamento, consentimento, idempotência e falha fechada;
+- observar professores e alunos usando o ciclo sem mediação artificial.
+
+### Depois: validar valor e operação
+
+- medir clareza da proposta, tempo até decisão e aceites/rejeições;
+- identificar quais áreas sustentam o acompanhamento e quais geram complexidade;
+- estabelecer processos de suporte, incidente, exclusão e retirada de consentimento;
+- validar nicho, disposição a pagar e custo operacional.
+
+### Somente com evidência
+
+- ampliar automações sem diluir a decisão profissional;
+- introduzir conteúdo de exercício próprio ou licenciado;
+- definir integrações e parcerias nutricionais;
+- considerar módulos comerciais em decisão de produto separada.
+
+## 13. Não objetivos
+
+- prescrever ou publicar treinos automaticamente;
+- diagnosticar dor ou substituir avaliação profissional;
+- permitir prescrição nutricional pelo personal trainer;
+- usar dados de saúde para treinar modelos;
+- operar financeiro ou pagamentos no escopo atual;
+- oferecer modo demo, troca local de papel ou atalhos que contornem autenticação;
+- tratar aprovação local como evidência de segurança ou prontidão de produção.
+
+## 14. Decisões em aberto
+
+- Qual nicho percebe mais valor no ciclo central?
+- Que evidência mostra melhora de acompanhamento, e não apenas mais interação?
+- Em quais momentos o Copiloto deve ser acionado para ajudar sem gerar fadiga?
+- Deve existir geração opcional de rascunho completo, ou isso enfraquece a tese de copiloto?
+- Que conteúdo visual de exercícios equilibra confiança, custo e direitos de uso?
+- Qual modelo de parceria nutricional respeita escopo profissional e consentimento?
+- Como garantir portabilidade e exclusão sem perder a rastreabilidade necessária?
+- Qual é a menor coorte capaz de validar valor e operação com risco controlado?
 
 ---
 
-## 12. Como navegar o protótipo
-
-Arquivo: `elo-prototipo.html` (abre em qualquer navegador; no celular fica em tela cheia).
-
-- Botão **Professor / Aluno** no topo alterna as duas experiências.
-- **Copiloto / Assistente** ficam no botão central elevado de cada barra.
-
-**Roteiro de demonstração sugerido:**
-1. *Aluno → Assistente →* "Senti uma dor" → seguir o fluxo (local, quando, nota 0-10). Repare que a dor vira dado estruturado e "avisa o professor".
-2. *Professor → Copiloto.* Repare que a mesma dor aparece como sinal. Escolha um caminho e veja as perguntas encadearem até o rascunho editável.
-3. No rascunho, toque em **"Abrir editor detalhado"**. Expanda um exercício e veja os campos (séries, carga, descanso, cadência…) e a miniatura do movimento em cada um.
-4. Ainda no construtor, toque na **bolinha verde flutuante** (canto inferior). Brinque com os lembretes — aceite "Adicionar mobilidade" e veja o item entrar marcado como confirmado por você.
-5. *Aluno → Treino →* toque em um exercício para ver a **ficha completa com a demonstração animada** (botão pausar/tocar).
-6. *Professor → Início → Anamnese e formulários.* Abra um **modelo pronto** (ex.: Corrida) ou toque em **"Criar anamnese dinâmica"**; adicione/edite perguntas, use as sugestões do copiloto e toque em "Ver como o aluno responde". Do lado do aluno, *Hoje → Responder* abre a anamnese para preencher.
-7. Explore o resto: nutrição, chat (dá pra digitar), agenda, financeiro/pagamento com Pix.
-
-O ponto a destacar em qualquer demo: **o loop fecha de ponta a ponta** — dor do aluno vira dado, dado vira contexto de decisão do professor. É isso, e não a "IA", que é o ativo defensável.
-
----
-
-## 13. Perguntas em aberto
-
-- Qual nicho exato atacar primeiro (corrida? reabilitação/pós-cirúrgico? idosos? gestantes?).
-- O copiloto deve ter um modo opcional "gerar rascunho completo" para quem quer velocidade — ou isso dilui o diferencial?
-- Tom da "bolinha": manter sempre em pergunta (respeitoso, mas pode parecer tímido para alguns) ou oferecer um modo mais assertivo/configurável?
-- Vídeos de execução: gravados pelo próprio professor, licenciados de uma biblioteca, ou misto? (impacta custo, diferencial e velocidade de lançamento)
-- Modelo com nutricionista parceiro: marketplace, parceria fixa ou white-label?
-- Estratégia de aquisição: como tirar o professor da ferramenta atual (o gargalo real).
-
----
-
-*Documento vivo. Atualizar conforme as entrevistas de validação trouxerem respostas às perguntas em aberto.*
+Este é um documento vivo. Afirmações de mercado e negócio devem permanecer identificadas como hipóteses até receberem evidência.

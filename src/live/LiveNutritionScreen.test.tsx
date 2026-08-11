@@ -1,7 +1,7 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { PrototypeProvider } from '../prototype-context'
-import type { NutritionDashboard, NutritionMealEvent } from './nutrition'
+import { EloAppProvider } from '../app-state'
+import type { NutritionDashboard, NutritionHydrationEvent, NutritionMealEvent } from './nutrition'
 import { LiveNutritionScreen, sumNutritionMeals } from './LiveNutritionScreen'
 
 const service = vi.hoisted(() => ({
@@ -47,7 +47,7 @@ const planDashboard: NutritionDashboard = {
 }
 
 function renderScreen() {
-  return render(<PrototypeProvider lockedRole="student"><LiveNutritionScreen /></PrototypeProvider>)
+  return render(<EloAppProvider lockedRole="student"><LiveNutritionScreen /></EloAppProvider>)
 }
 
 beforeEach(() => {
@@ -92,6 +92,43 @@ describe('live nutrition experience', () => {
     expect(await screen.findByText('1 de 1 registradas hoje')).toBeInTheDocument()
     expect(storageSpy).not.toHaveBeenCalledWith('elo-meals', expect.anything())
     storageSpy.mockRestore()
+  })
+
+  it('admits only one mutation per meal or hydration control while a request is pending', async () => {
+    service.loadDashboard.mockResolvedValue(planDashboard)
+    let resolveMeal!: (value: NutritionMealEvent) => void
+    let resolveHydration!: (value: NutritionHydrationEvent) => void
+    service.recordMealState.mockReturnValue(new Promise((resolve) => { resolveMeal = resolve }))
+    service.recordHydrationTotal.mockReturnValue(new Promise((resolve) => { resolveHydration = resolve }))
+    renderScreen()
+
+    const mealButton = await screen.findByRole('button', { name: 'Registrar Café da manhã' })
+    await act(async () => {
+      mealButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      mealButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(service.recordMealState).toHaveBeenCalledTimes(1)
+
+    const waterButton = screen.getByRole('button', { name: 'Adicionar 250 mililitros' })
+    await act(async () => {
+      waterButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      waterButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(service.recordHydrationTotal).toHaveBeenCalledTimes(1)
+
+    await act(async () => {
+      resolveMeal({
+        id: '44444444-4444-4444-8444-444444444444', sequence: 1, planVersionId: planId,
+        workspaceId, studentUserId: studentId, mealId: 'breakfast', action: 'completed',
+        recordedOn: '2026-08-07', recordedAt: '2026-08-07T13:00:00.000Z',
+      })
+      resolveHydration({
+        id: '55555555-5555-4555-8555-555555555555', sequence: 2, planVersionId: planId,
+        workspaceId, studentUserId: studentId, totalMl: 250,
+        recordedOn: '2026-08-07', recordedAt: '2026-08-07T13:01:00.000Z',
+      })
+      await Promise.resolve()
+    })
   })
 
   it('sums only selected meals for honest macro progress', () => {

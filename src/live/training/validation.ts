@@ -1,11 +1,11 @@
 import type { Exercise, FormQuestion, QuestionType } from '../../types'
+import { parseIsoTimestamp } from '../../lib/iso-timestamp'
+import { hasUnsafeDisplayCharacters } from '../../lib/safe-text'
 import type { AnamnesisAnswers, PageCursor, TrainingScope } from './types'
 
-const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const safeIdPattern = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$/
 const idempotencyPattern = /^[A-Za-z0-9][A-Za-z0-9._:-]{15,127}$/
-const isoTimestampPattern = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|[+-]\d{2}:\d{2})$/
-const controlPattern = /[\u0000-\u001f\u007f]/
 const questionTypes = new Set<QuestionType>(['text', 'long', 'single', 'multi', 'scale', 'yesno', 'number'])
 
 export function isUuid(value: unknown): value is string {
@@ -16,17 +16,16 @@ export function isIdempotencyKey(value: unknown): value is string {
   return typeof value === 'string' && idempotencyPattern.test(value)
 }
 
-export function boundedString(value: unknown, minimum: number, maximum: number, allowControl = false): string | null {
+export function boundedString(value: unknown, minimum: number, maximum: number, multiline = false): string | null {
   if (typeof value !== 'string') return null
   const clean = value.trim()
-  if (clean.length < minimum || clean.length > maximum || (!allowControl && controlPattern.test(clean))) return null
+  if (clean.length < minimum || clean.length > maximum || hasUnsafeDisplayCharacters(clean, multiline)) return null
   return clean
 }
 
 export function isIsoTimestamp(value: unknown): value is string {
-  if (typeof value !== 'string' || !isoTimestampPattern.test(value)) return false
-  const parsed = Date.parse(value)
-  return Number.isFinite(parsed) && parsed <= Date.now() + (5 * 60 * 1000)
+  const parsed = parseIsoTimestamp(value)
+  return parsed !== null && parsed <= Date.now() + (5 * 60 * 1000)
 }
 
 export function validateScope(scope: TrainingScope) {
@@ -73,7 +72,7 @@ export function validateExercises(value: unknown): value is Exercise[] {
     for (const key of ['sets', 'reps', 'load', 'rest', 'tempo', 'rir'] as const) {
       if (!boundedString(item[key], 1, 40) || item[key] !== String(item[key]).trim()) return false
     }
-    if (typeof item.note !== 'string' || item.note.length > 500 || item.note !== item.note.trim() || controlPattern.test(item.note)) return false
+    if (typeof item.note !== 'string' || item.note.length > 500 || item.note !== item.note.trim() || hasUnsafeDisplayCharacters(item.note, true)) return false
     if ('suggested' in item && typeof item.suggested !== 'boolean') return false
   }
   return true
@@ -118,13 +117,13 @@ export function validateAnswerEnvelope(value: unknown): value is AnamnesisAnswer
   if (Object.keys(object).length > 50 || !fitsJsonSize(object, 131072)) return false
   return Object.entries(object).every(([key, answer]) => {
     if (!safeIdPattern.test(key)) return false
-    if (typeof answer === 'string') return answer.length >= 1 && answer.length <= 4000 && answer === answer.trim()
+    if (typeof answer === 'string') return answer.length >= 1 && answer.length <= 4000 && answer === answer.trim() && !hasUnsafeDisplayCharacters(answer, true)
     if (typeof answer === 'number') return Number.isFinite(answer) && Math.abs(answer) <= 1000000000
     return Array.isArray(answer)
       && answer.length >= 1
       && answer.length <= 20
       && new Set(answer).size === answer.length
-      && answer.every((item) => typeof item === 'string' && item.length >= 1 && item.length <= 100 && item === item.trim())
+      && answer.every((item) => typeof item === 'string' && item.length >= 1 && item.length <= 100 && item === item.trim() && !hasUnsafeDisplayCharacters(item))
   })
 }
 
@@ -143,9 +142,9 @@ export function validateAnswers(value: unknown, questions: unknown): value is An
 
     const answer = answers[question.id]
     if (question.type === 'text') {
-      if (typeof answer !== 'string' || answer.length < 1 || answer.length > 500 || answer !== answer.trim()) return false
+      if (typeof answer !== 'string' || answer.length < 1 || answer.length > 500 || answer !== answer.trim() || hasUnsafeDisplayCharacters(answer)) return false
     } else if (question.type === 'long') {
-      if (typeof answer !== 'string' || answer.length < 1 || answer.length > 4000 || answer !== answer.trim()) return false
+      if (typeof answer !== 'string' || answer.length < 1 || answer.length > 4000 || answer !== answer.trim() || hasUnsafeDisplayCharacters(answer, true)) return false
     } else if (question.type === 'single') {
       if (typeof answer !== 'string' || !question.options?.includes(answer)) return false
     } else if (question.type === 'multi') {

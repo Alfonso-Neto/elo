@@ -4,7 +4,7 @@ import {
   Minus, Plus, RefreshCw, Salad, ShieldCheck, Waves,
 } from 'lucide-react'
 import { Button, Eyebrow, Modal, PageIntro, Progress, SectionTitle } from '../components'
-import { usePrototype } from '../prototype-context'
+import { useEloApp } from '../app-state'
 import { createIdempotencyKey } from '../signals'
 import {
   createNutritionService,
@@ -93,7 +93,7 @@ function ConsentPanel({
 }
 
 export function LiveNutritionScreen() {
-  const { navigate, notify } = usePrototype()
+  const { navigate, notify } = useEloApp()
   const service = useMemo(() => createNutritionService(), [])
   const [phase, setPhase] = useState<LoadPhase>('loading')
   const [dashboard, setDashboard] = useState<NutritionDashboard | null>(null)
@@ -107,38 +107,63 @@ export function LiveNutritionScreen() {
   const consentCommand = useRef<{ action: ConsentAction; key: string } | null>(null)
   const mealCommands = useRef(new Map<string, PendingMeal>())
   const hydrationCommand = useRef<{ totalMl: number; key: string } | null>(null)
+  const loadRequestVersion = useRef(0)
+  const active = useRef(true)
+  const consentGuard = useRef(false)
+  const mealGuards = useRef(new Set<string>())
+  const hydrationGuard = useRef(false)
 
   const load = async () => {
+    const requestVersion = ++loadRequestVersion.current
     setPhase('loading')
     setError('')
     try {
       const next = await service.loadDashboard()
+      if (!active.current || requestVersion !== loadRequestVersion.current) return
       setDashboard(next)
       setPhase('ready')
     } catch (cause) {
+      if (!active.current || requestVersion !== loadRequestVersion.current) return
       setError(cause instanceof Error ? cause.message : 'Não foi possível carregar a nutrição agora.')
       setPhase('error')
     }
   }
 
-  useEffect(() => { void load() }, [])
+  useEffect(() => {
+    active.current = true
+    void load()
+    return () => {
+      active.current = false
+      loadRequestVersion.current += 1
+      consentGuard.current = false
+      mealGuards.current.clear()
+      hydrationGuard.current = false
+    }
+  }, [])
 
   const updateConsent = async (action: ConsentAction) => {
-    if (consentPending) return
+    if (consentGuard.current) return
     if (action === 'granted' && !acknowledged) {
       setActionError('Confirme que leu a finalidade antes de autorizar.')
       return
     }
+    consentGuard.current = true
     setConsentPending(true)
     setActionError('')
     try {
       const command = consentCommand.current?.action === action
         ? consentCommand.current
-        : { action, key: createIdempotencyKey(action === 'granted' ? 'nutrition-consent' : 'nutrition-withdraw') }
+        : {
+            action,
+            key: action === 'granted'
+              ? createIdempotencyKey('nutrition-consent')
+              : createIdempotencyKey('nutrition-withdraw'),
+          }
       consentCommand.current = command
       if (action === 'granted') await service.grantConsent(command.key)
       else await service.withdrawConsent(command.key)
       consentCommand.current = null
+      if (!active.current) return
       setAcknowledged(false)
       setWithdrawOpen(false)
       await load()
@@ -149,14 +174,17 @@ export function LiveNutritionScreen() {
           : 'Novos registros e o acesso da equipe foram pausados.',
       )
     } catch (cause) {
+      if (!active.current) return
       setActionError(cause instanceof Error ? cause.message : 'Não foi possível atualizar o consentimento agora.')
     } finally {
-      setConsentPending(false)
+      consentGuard.current = false
+      if (active.current) setConsentPending(false)
     }
   }
 
   const toggleMeal = async (mealId: string, completed: boolean) => {
-    if (!dashboard?.plan || dashboard.consent !== 'granted' || pendingMeals.has(mealId)) return
+    if (!dashboard?.plan || dashboard.consent !== 'granted' || mealGuards.current.has(mealId)) return
+    mealGuards.current.add(mealId)
     const action: PendingMeal['action'] = completed ? 'uncompleted' : 'completed'
     setActionError('')
     setPendingMeals((current) => new Set(current).add(mealId))
@@ -164,7 +192,12 @@ export function LiveNutritionScreen() {
       const previous = mealCommands.current.get(mealId)
       const command = previous?.action === action
         ? previous
-        : { action, key: createIdempotencyKey(`nutrition-meal-${action}`) }
+        : {
+            action,
+            key: action === 'completed'
+              ? createIdempotencyKey('nutrition-meal-completed')
+              : createIdempotencyKey('nutrition-meal-uncompleted'),
+          }
       mealCommands.current.set(mealId, command)
       const event = await service.recordMealState({
         planVersionId: dashboard.plan.id,
@@ -173,20 +206,26 @@ export function LiveNutritionScreen() {
         idempotencyKey: command.key,
       })
       mealCommands.current.delete(mealId)
+      if (!active.current) return
       setDashboard((current) => current ? { ...current, mealEvents: [...current.mealEvents, event] } : current)
     } catch (cause) {
+      if (!active.current) return
       setActionError(cause instanceof Error ? cause.message : 'Não foi possível registrar a refeição agora.')
     } finally {
-      setPendingMeals((current) => {
-        const next = new Set(current)
-        next.delete(mealId)
-        return next
-      })
+      mealGuards.current.delete(mealId)
+      if (active.current) {
+        setPendingMeals((current) => {
+          const next = new Set(current)
+          next.delete(mealId)
+          return next
+        })
+      }
     }
   }
 
   const changeHydration = async (totalMl: number) => {
-    if (!dashboard?.plan || dashboard.consent !== 'granted' || hydrationPending) return
+    if (!dashboard?.plan || dashboard.consent !== 'granted' || hydrationGuard.current) return
+    hydrationGuard.current = true
     setActionError('')
     setHydrationPending(true)
     try {
@@ -201,11 +240,14 @@ export function LiveNutritionScreen() {
         idempotencyKey: command.key,
       })
       hydrationCommand.current = null
+      if (!active.current) return
       setDashboard((current) => current ? { ...current, hydrationEvents: [...current.hydrationEvents, event] } : current)
     } catch (cause) {
+      if (!active.current) return
       setActionError(cause instanceof Error ? cause.message : 'Não foi possível registrar a água agora.')
     } finally {
-      setHydrationPending(false)
+      hydrationGuard.current = false
+      if (active.current) setHydrationPending(false)
     }
   }
 
@@ -236,9 +278,9 @@ export function LiveNutritionScreen() {
     {!trackingEnabled && <ConsentPanel withdrawn acknowledged={acknowledged} onAcknowledged={setAcknowledged} onGrant={() => void updateConsent('granted')} pending={consentPending} error={actionError} />}
     <section className="macro-strip" aria-label="Totais planejados e progresso registrado"><div><strong>{formatNumber(totals.proteinG)}g</strong><span>Proteína planejada</span><i style={{ width: `${ratio(consumed.proteinG, totals.proteinG)}%` }} /></div><div><strong>{formatNumber(totals.carbsG)}g</strong><span>Carboidratos planejados</span><i style={{ width: `${ratio(consumed.carbsG, totals.carbsG)}%` }} /></div><div><strong>{formatNumber(totals.fatG)}g</strong><span>Gorduras planejadas</span><i style={{ width: `${ratio(consumed.fatG, totals.fatG)}%` }} /></div><div><strong>{formatNumber(totals.kcal)}</strong><span>kcal planejadas</span><i style={{ width: `${ratio(consumed.kcal, totals.kcal)}%` }} /></div></section>
     {actionError && trackingEnabled && <p className="nutrition-action-error nutrition-page-error" role="alert">{actionError}</p>}
-    <div className="nutrition-layout"><section><SectionTitle index="01" title="Refeições" copy={`${completed.size} de ${plan.meals.length} registradas hoje`} /><div className="meal-list">{plan.meals.map((meal) => { const done = completed.has(meal.id); const pending = pendingMeals.has(meal.id); return <article className={done ? 'done' : ''} key={meal.id}><time>{meal.time}</time><button disabled={!trackingEnabled || pending} onClick={() => void toggleMeal(meal.id, done)} aria-pressed={done} aria-label={done ? `Desmarcar ${meal.title}` : `Registrar ${meal.title}`}>{pending ? <LoaderCircle className="spin" size={17} /> : done ? <Check size={17} /> : <Circle size={17} />}</button><div><h3>{meal.title}</h3><p>{meal.description}</p><small>P {formatNumber(meal.proteinG)}g · C {formatNumber(meal.carbsG)}g · G {formatNumber(meal.fatG)}g · {meal.kcal} kcal</small></div></article> })}</div>
+    <div className="nutrition-layout"><section><SectionTitle index="01" title="Refeições" copy={`${completed.size} de ${plan.meals.length} registradas hoje`} /><div className="meal-list">{plan.meals.map((meal) => { const done = completed.has(meal.id); const pending = pendingMeals.has(meal.id); return <article className={done ? 'done' : ''} key={meal.id}><time>{meal.time}</time><button type="button" disabled={!trackingEnabled || pending} onClick={() => void toggleMeal(meal.id, done)} aria-pressed={done} aria-label={done ? `Desmarcar ${meal.title}` : `Registrar ${meal.title}`}>{pending ? <LoaderCircle className="spin" size={17} /> : done ? <Check size={17} /> : <Circle size={17} />}</button><div><h3>{meal.title}</h3><p>{meal.description}</p><small>P {formatNumber(meal.proteinG)}g · C {formatNumber(meal.carbsG)}g · G {formatNumber(meal.fatG)}g · {meal.kcal} kcal</small></div></article> })}</div>
       {plan.notes && <div className="nutrition-plan-note"><Eyebrow>ORIENTAÇÃO DA NUTRICIONISTA</Eyebrow><p>{plan.notes}</p></div>}
-    </section><aside><div className="water-card"><Waves size={22} /><Eyebrow>ÁGUA · META {formatNumber(plan.hydrationTargetMl)} ML</Eyebrow><strong>{formatNumber(hydrationMl)}<small> ml</small></strong><Progress value={(hydrationMl / plan.hydrationTargetMl) * 100} label="Progresso da meta de água" /><div><button disabled={!trackingEnabled || hydrationPending || hydrationMl === 0} onClick={() => void changeHydration(hydrationMl - 250)} aria-label="Remover 250 mililitros">{hydrationPending ? <LoaderCircle className="spin" size={16} /> : <Minus size={17} />}</button><span>{hydrationMl >= plan.hydrationTargetMl ? 'Meta atingida' : `${formatNumber(plan.hydrationTargetMl - hydrationMl)} ml para a meta`}</span><button disabled={!trackingEnabled || hydrationPending || hydrationMl >= 10_000} onClick={() => void changeHydration(hydrationMl + 250)} aria-label="Adicionar 250 mililitros">{hydrationPending ? <LoaderCircle className="spin" size={16} /> : <Plus size={17} />}</button></div></div><div className="legal-note"><Info size={17} /><p>Seu professor não prescreve nem altera este plano. Ele pode consultar a versão vigente apenas enquanto houver consentimento e encaminhar dúvidas ao nutricionista.</p></div><Button variant="secondary" className="wide" onClick={() => { notify('Canal de acompanhamento', `Peça ao seu professor para coordenar a dúvida com ${plan.nutritionistName}.`); navigate('messages') }}><MessageCircle size={16} /> Pedir encaminhamento</Button>{trackingEnabled && <button className="nutrition-withdraw-link" onClick={() => setWithdrawOpen(true)}>Pausar compartilhamento nutricional</button>}</aside></div>
+    </section><aside><div className="water-card"><Waves size={22} /><Eyebrow>ÁGUA · META {formatNumber(plan.hydrationTargetMl)} ML</Eyebrow><strong>{formatNumber(hydrationMl)}<small> ml</small></strong><Progress value={(hydrationMl / plan.hydrationTargetMl) * 100} label="Progresso da meta de água" /><div><button type="button" disabled={!trackingEnabled || hydrationPending || hydrationMl === 0} onClick={() => void changeHydration(hydrationMl - 250)} aria-label="Remover 250 mililitros">{hydrationPending ? <LoaderCircle className="spin" size={16} /> : <Minus size={17} />}</button><span>{hydrationMl >= plan.hydrationTargetMl ? 'Meta atingida' : `${formatNumber(plan.hydrationTargetMl - hydrationMl)} ml para a meta`}</span><button type="button" disabled={!trackingEnabled || hydrationPending || hydrationMl >= 10_000} onClick={() => void changeHydration(hydrationMl + 250)} aria-label="Adicionar 250 mililitros">{hydrationPending ? <LoaderCircle className="spin" size={16} /> : <Plus size={17} />}</button></div></div><div className="legal-note"><Info size={17} /><p>Seu professor não prescreve nem altera este plano. Ele pode consultar a versão vigente apenas enquanto houver consentimento e encaminhar dúvidas ao nutricionista.</p></div><Button variant="secondary" className="wide" onClick={() => { notify('Canal de acompanhamento', `Peça ao seu professor para coordenar a dúvida com ${plan.nutritionistName}.`); navigate('messages') }}><MessageCircle size={16} /> Pedir encaminhamento</Button>{trackingEnabled && <button type="button" className="nutrition-withdraw-link" onClick={() => setWithdrawOpen(true)}>Pausar compartilhamento nutricional</button>}</aside></div>
     {withdrawOpen && <Modal title="Pausar a integração nutricional?" eyebrow="CONTROLE DOS SEUS DADOS" onClose={() => setWithdrawOpen(false)} size="small"><div className="nutrition-withdraw-dialog"><p>Você continuará vendo o plano atual, mas registros diários e o acesso da equipe serão pausados até uma nova autorização.</p>{actionError && <p className="nutrition-action-error" role="alert">{actionError}</p>}<div><Button variant="secondary" onClick={() => setWithdrawOpen(false)}>Manter autorização</Button><Button variant="danger" disabled={consentPending} onClick={() => void updateConsent('withdrawn')}>{consentPending && <LoaderCircle className="spin" size={15} />} Pausar integração</Button></div></div></Modal>}
   </div>
 }

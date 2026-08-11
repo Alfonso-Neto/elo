@@ -175,7 +175,7 @@ function TrainerVerificationContent() {
       <div className="enrollment-story-copy">
         <Eyebrow accent>IDENTIDADE PROFISSIONAL</Eyebrow>
         <h1>Confiança antes do acesso.</h1>
-        <p>O Elo separa cadastro, revisão profissional e acesso aos dados dos alunos. A equipe confere o CREF em fonte pública antes de liberar o ambiente real.</p>
+        <p>O Elo separa cadastro, revisão profissional e acesso aos dados dos alunos. A equipe confere o CREF em fonte pública antes de liberar o ambiente de acompanhamento.</p>
       </div>
       <ol className="enrollment-steps" aria-label="Progresso da verificação">
         <li className="done"><span><Check size={14} /></span><div><strong>Conta criada</strong><small>{profile?.displayName}</small></div></li>

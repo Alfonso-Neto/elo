@@ -60,7 +60,10 @@ export type AssistantBoundary = {
 }
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
-const text = (value: unknown, min: number, max: number): value is string => typeof value === 'string' && value.trim().length >= min && value.length <= max
+const unsafeTextPattern = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2060-\u206f\ufeff]/i
+const safeIdPattern = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,47}$/
+const redFlagCodePattern = /^[a-z][a-z0-9_]{0,47}$/
+const text = (value: unknown, min: number, max: number): value is string => typeof value === 'string' && value.trim().length >= min && value.length <= max && !unsafeTextPattern.test(value)
 const record = (value: unknown): value is Record<string, unknown> => Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 const stringArray = (value: unknown, maxItems: number, maxLength: number): value is string[] => Array.isArray(value) && value.length <= maxItems && value.every((item) => text(item, 1, maxLength))
 const exactKeys = (value: Record<string, unknown>, keys: readonly string[]) => {
@@ -190,6 +193,16 @@ export function parseAssistantProposal(value: unknown): AssistantProposal | null
   if (!Array.isArray(value.questions) || value.questions.length > 8 || !value.questions.every((item) => record(item) && exactKeys(item, ['id', 'question', 'reason', 'answer_type']) && text(item.id, 1, 48) && text(item.question, 1, 300) && text(item.reason, 1, 300) && ['yes_no', 'scale_0_10', 'short_text'].includes(String(item.answer_type)))) return null
   if (!Array.isArray(value.sources) || value.sources.length > 8 || !value.sources.every((item) => record(item) && exactKeys(item, ['kind', 'label']) && ['user_report', 'workspace_context', 'safety_protocol'].includes(String(item.kind)) && text(item.label, 1, 240))) return null
   if (!Array.isArray(value.workout_changes) || value.workout_changes.length > 8 || !value.workout_changes.every(validWorkoutChange)) return null
+  const redFlags = value.red_flags as AssistantProposal['red_flags']
+  const questions = value.questions as AssistantProposal['questions']
+  const sources = value.sources as AssistantProposal['sources']
+  const workoutChanges = value.workout_changes as AssistantProposal['workout_changes']
+  if (redFlags.some((item) => !redFlagCodePattern.test(item.code)) || new Set(redFlags.map((item) => item.code)).size !== redFlags.length) return null
+  if (questions.some((item) => !safeIdPattern.test(item.id)) || new Set(questions.map((item) => item.id)).size !== questions.length) return null
+  if (new Set(sources.map((item) => `${item.kind}\u0000${item.label}`)).size !== sources.length) return null
+  const unsafeOperations = new Set(['reduce_load_percent', 'reduce_volume_percent', 'replace_exercise', 'remove_exercise', 'add_rest_seconds', 'cap_rpe'])
+  if (redFlags.length > 0 && (!['urgent', 'emergency'].includes(String(value.urgency)) || workoutChanges.some((change) => unsafeOperations.has(change.operation)))) return null
+  if (value.urgency === 'emergency' && workoutChanges.some((change) => unsafeOperations.has(change.operation))) return null
   return value as AssistantProposal
 }
 

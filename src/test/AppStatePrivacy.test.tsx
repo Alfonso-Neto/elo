@@ -1,16 +1,15 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it } from 'vitest'
-import { PrototypeProvider, legacyPrototypeStorageKeys, usePrototype } from '../prototype-context'
+import { EloAppProvider, legacyBrowserStorageKeys, useEloApp } from '../app-state'
 
 function StateProbe() {
   const {
-    addPainReport, assistantEntry, formLastSentDrafts, formSessionDrafts, messages, messageSessionDrafts,
-    openExercisePainReport, painReports, setFormLastSentDrafts, setFormSessionDrafts, setMessageSessionDrafts,
-    setStudentWorkoutPinnedVersions, setStudentWorkoutSessionDrafts, setWorkoutSessionDrafts, studentWorkout,
+    assistantEntry, formLastSentDrafts, formSessionDrafts, messageSessionDrafts,
+    openExercisePainReport, setFormLastSentDrafts, setFormSessionDrafts, setMessageSessionDrafts,
+    setStudentWorkoutPinnedVersions, setStudentWorkoutSessionDrafts, setWorkoutSessionDrafts,
     studentWorkoutPinnedVersions, studentWorkoutSessionDrafts, workoutSessionDrafts,
-  } = usePrototype()
+  } = useEloApp()
   return <div>
-    <output>{`pain:${painReports.length} messages:${messages.length} workout:${studentWorkout.length}`}</output>
     <output>{assistantEntry?.movement ?? 'no-assistant-entry'}</output>
     <output>{`drafts:${Object.keys(workoutSessionDrafts).length}`}</output>
     <output>{`student-workout-drafts:${Object.keys(studentWorkoutSessionDrafts).length}`}</output>
@@ -18,13 +17,6 @@ function StateProbe() {
     <output>{`form-drafts:${Object.keys(formSessionDrafts).length}`}</output>
     <output>{`sent-form-drafts:${Object.keys(formLastSentDrafts).length}`}</output>
     <output>{`message-drafts:${Object.keys(messageSessionDrafts).length}`}</output>
-    <button onClick={() => addPainReport({
-      studentId: 'remote-student',
-      studentName: 'Conta remota',
-      location: 'Joelho direito',
-      moment: 'Durante o treino',
-      intensity: 4,
-    })}>Mutate remote state</button>
     <button onClick={() => openExercisePainReport('  Movimento\nprivado  ')}>Open exercise pain flow</button>
     <button onClick={() => setWorkoutSessionDrafts({
       'remote-student': { title: 'Rascunho privado', exercises: [{ id: 'private', name: 'Movimento confidencial', muscle: 'Teste', sets: '3', reps: '10', load: '', rest: '', tempo: '', rir: '', note: '' }] },
@@ -74,7 +66,11 @@ function StateProbe() {
   </div>
 }
 
-describe('authenticated workspace privacy boundary', () => {
+function IdentityScopedProbe({ identity }: { identity: string }) {
+  return <EloAppProvider key={identity} lockedRole="student"><StateProbe /></EloAppProvider>
+}
+
+describe('authenticated Elo app-state privacy boundary', () => {
   beforeEach(() => {
     localStorage.clear()
     window.history.replaceState(null, '', '#/today')
@@ -83,18 +79,21 @@ describe('authenticated workspace privacy boundary', () => {
   it('never hydrates or persists authenticated state through legacy demo storage', async () => {
     localStorage.setItem('elo-pain', JSON.stringify([{ id: 'legacy-health-record' }]))
     localStorage.setItem('elo-messages', JSON.stringify([{ id: 'legacy-message' }]))
+    localStorage.setItem('elo-other-messages', JSON.stringify([{ id: 'legacy-other-thread' }]))
     localStorage.setItem('elo-published-workout', JSON.stringify([{ id: 'legacy-workout' }]))
+    localStorage.setItem('elo-auth', 'supabase-session-must-survive')
 
-    render(<PrototypeProvider lockedRole="student"><StateProbe /></PrototypeProvider>)
+    render(<EloAppProvider lockedRole="student"><StateProbe /></EloAppProvider>)
 
-    expect(screen.getByText('pain:0 messages:0 workout:0')).toBeInTheDocument()
+    expect(screen.getByText('no-assistant-entry')).toBeInTheDocument()
+    expect(screen.getByText('drafts:0')).toBeInTheDocument()
+    expect(screen.getByText('student-workout-drafts:0')).toBeInTheDocument()
+    expect(screen.getByText('form-drafts:0')).toBeInTheDocument()
+    expect(screen.getByText('message-drafts:0')).toBeInTheDocument()
     await waitFor(() => {
-      legacyPrototypeStorageKeys.forEach((key) => expect(localStorage.getItem(key)).toBeNull())
+      legacyBrowserStorageKeys.forEach((key) => expect(localStorage.getItem(key)).toBeNull())
     })
-
-    fireEvent.click(screen.getByRole('button', { name: 'Mutate remote state' }))
-    expect(screen.getByText('pain:1 messages:0 workout:0')).toBeInTheDocument()
-    expect(localStorage.getItem('elo-pain')).toBeNull()
+    expect(localStorage.getItem('elo-auth')).toBe('supabase-session-must-survive')
 
     fireEvent.click(screen.getByRole('button', { name: 'Open exercise pain flow' }))
     expect(screen.getByText('Movimento privado')).toBeInTheDocument()
@@ -127,5 +126,43 @@ describe('authenticated workspace privacy boundary', () => {
     expect(screen.getByText('message-drafts:1')).toBeInTheDocument()
     expect(JSON.stringify({ ...localStorage })).not.toContain('Mensagem confidencial')
     expect(JSON.stringify({ ...localStorage })).not.toContain('thread-message-private-key')
+  })
+
+  it('drops every in-memory draft when the authenticated identity scope changes', () => {
+    const view = render(<IdentityScopedProbe identity="first-user" />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Keep private session draft' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Keep private student workout draft' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Keep private form draft' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Keep private message draft' }))
+    expect(screen.getByText('drafts:1')).toBeInTheDocument()
+    expect(screen.getByText('student-workout-drafts:1')).toBeInTheDocument()
+    expect(screen.getByText('form-drafts:1')).toBeInTheDocument()
+    expect(screen.getByText('message-drafts:1')).toBeInTheDocument()
+
+    view.rerender(<IdentityScopedProbe identity="second-user" />)
+
+    expect(screen.getByText('drafts:0')).toBeInTheDocument()
+    expect(screen.getByText('student-workout-drafts:0')).toBeInTheDocument()
+    expect(screen.getByText('form-drafts:0')).toBeInTheDocument()
+    expect(screen.getByText('message-drafts:0')).toBeInTheDocument()
+    expect(JSON.stringify({ ...localStorage })).not.toContain('confidencial')
+  })
+
+  it('warns before a browser exit only while an in-memory draft is unsent', () => {
+    const view = render(<IdentityScopedProbe identity="first-user" />)
+    const cleanExit = new Event('beforeunload', { cancelable: true })
+    window.dispatchEvent(cleanExit)
+    expect(cleanExit.defaultPrevented).toBe(false)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Keep private message draft' }))
+    const dirtyExit = new Event('beforeunload', { cancelable: true })
+    window.dispatchEvent(dirtyExit)
+    expect(dirtyExit.defaultPrevented).toBe(true)
+
+    view.rerender(<IdentityScopedProbe identity="second-user" />)
+    const resetExit = new Event('beforeunload', { cancelable: true })
+    window.dispatchEvent(resetExit)
+    expect(resetExit.defaultPrevented).toBe(false)
   })
 })

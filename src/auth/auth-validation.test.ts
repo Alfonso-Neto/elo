@@ -20,6 +20,18 @@ describe('auth validation', () => {
     })).toEqual({})
   })
 
+  it('rejects deceptive or non-canonical public identity fields before signup', () => {
+    const base = {
+      role: 'trainer' as const, displayName: 'Ana Lima', email: 'ana@example.com',
+      password: 'uma-senha-segura', confirmation: 'uma-senha-segura', crefNumber: '123456-G',
+      crefState: 'SP', studioName: 'Studio Elo', acceptedTerms: true,
+    }
+    expect(validateRegistration({ ...base, displayName: 'Ana\u202ELima' }).displayName).toBeTruthy()
+    expect(validateRegistration({ ...base, crefNumber: '123 456-G' }).crefNumber).toBeTruthy()
+    expect(validateRegistration({ ...base, studioName: 'Studio\u200bElo' }).studioName).toBeTruthy()
+    expect(validateRegistration({ ...base, email: `${'a'.repeat(310)}@example.com` }).email).toBeTruthy()
+  })
+
   it('rejects a mismatched password reset', () => {
     expect(validatePasswordReset('uma-senha-segura', 'uma-senha-diferente').confirmation).toBeTruthy()
   })

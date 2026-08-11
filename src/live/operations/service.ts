@@ -1,4 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { parseIsoTimestamp } from '../../lib/iso-timestamp'
+import { hasUnsafeDisplayCharacters } from '../../lib/safe-text'
 import { requireSupabase } from '../../lib/supabase'
 import { OperationsDomainError, toOperationsDomainError } from './errors'
 import type {
@@ -72,7 +74,6 @@ const messageColumns = [
 ].join(', ')
 
 const roleSet = new Set<OperationsRole>(['owner', 'trainer', 'student'])
-const controlPattern = /[\u0000-\u001f\u007f-\u009f]/
 
 function unavailable(): never {
   throw new OperationsDomainError('service_unavailable')
@@ -92,7 +93,7 @@ function requiredUuid(row: Record<string, unknown>, key: string) {
 
 function timestamp(row: Record<string, unknown>, key: string) {
   const value = requiredString(row, key)
-  if (!Number.isFinite(Date.parse(value))) return unavailable()
+  if (parseIsoTimestamp(value) === null) return unavailable()
   return value
 }
 
@@ -109,7 +110,7 @@ function safeInteger(value: unknown, minimum: number, maximum = Number.MAX_SAFE_
 
 function storedText(row: Record<string, unknown>, key: string, maximum: number) {
   const value = requiredString(row, key)
-  if (value.length > maximum || value !== value.trim() || controlPattern.test(value)) return unavailable()
+  if (value.length > maximum || value !== value.trim() || hasUnsafeDisplayCharacters(value)) return unavailable()
   return value
 }
 

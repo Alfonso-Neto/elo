@@ -1,4 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { parseIsoTimestamp } from '../lib/iso-timestamp'
+import { hasUnsafeDisplayCharacters } from '../lib/safe-text'
 import { requireSupabase } from '../lib/supabase'
 import { SignalDomainError, toSignalDomainError } from './errors'
 import { idempotencyKeyPattern } from './idempotency'
@@ -87,13 +89,13 @@ function requiredUuid(row: Record<string, unknown>, key: string) {
 
 function boundedString(row: Record<string, unknown>, key: string, minimum: number, maximum: number) {
   const value = requiredString(row, key)
-  if (value.length < minimum || value.length > maximum) throw new SignalDomainError('service_unavailable')
+  if (value.length < minimum || value.length > maximum || hasUnsafeDisplayCharacters(value)) throw new SignalDomainError('service_unavailable')
   return value
 }
 
 function timestampString(row: Record<string, unknown>, key: string) {
   const value = requiredString(row, key)
-  if (!Number.isFinite(Date.parse(value))) throw new SignalDomainError('service_unavailable')
+  if (parseIsoTimestamp(value) === null) throw new SignalDomainError('service_unavailable')
   return value
 }
 
@@ -248,7 +250,7 @@ function parsePainReportSummary(row: unknown): PainReportSummary {
 function parsePainReport(row: unknown): PainReport {
   if (!isRecord(row)) throw new SignalDomainError('service_unavailable')
   const summary = parsePainReportSummary(row)
-  if (row.detail !== null && (typeof row.detail !== 'string' || row.detail.length < 1 || row.detail.length > 2000)) {
+  if (row.detail !== null && (typeof row.detail !== 'string' || row.detail.length < 1 || row.detail.length > 2000 || hasUnsafeDisplayCharacters(row.detail, true))) {
     throw new SignalDomainError('service_unavailable')
   }
   return { ...summary, detail: row.detail as string | null }
@@ -280,7 +282,7 @@ function parsePainReportEvent(row: unknown): PainReportEvent {
     || (row.action !== 'acknowledged' && row.action !== 'resolved')
     || (
       row.note !== null
-      && (typeof row.note !== 'string' || row.note.length < 1 || row.note.length > 1000)
+      && (typeof row.note !== 'string' || row.note.length < 1 || row.note.length > 1000 || hasUnsafeDisplayCharacters(row.note, true))
     )
   ) throw new SignalDomainError('service_unavailable')
 
@@ -308,7 +310,7 @@ function normalizeActionNote(note: string | null | undefined, required: boolean)
     throw new SignalDomainError('validation', { fieldErrors: { note: 'Use um texto válido.' } })
   }
   const normalized = note?.trim() || null
-  if ((required && !normalized) || (normalized && normalized.length > 1000) || normalized?.includes('\u0000')) {
+  if ((required && !normalized) || (normalized && (normalized.length > 1000 || hasUnsafeDisplayCharacters(normalized, true)))) {
     throw new SignalDomainError('validation', {
       fieldErrors: { note: required ? 'Informe a resolução em até 1.000 caracteres.' : 'Use até 1.000 caracteres.' },
     })

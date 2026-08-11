@@ -7,7 +7,7 @@ import {
 import { useAuth } from '../auth/auth-context'
 import { Button, Eyebrow, Modal, PageIntro, SectionTitle } from '../components'
 import { listEnrolledStudents, type EnrolledStudent } from '../onboarding/enrollment-service'
-import { usePrototype } from '../prototype-context'
+import { useEloApp } from '../app-state'
 import { createIdempotencyKey } from '../signals'
 import {
   createOperationsService,
@@ -92,7 +92,7 @@ function mergeMessages(current: ThreadMessage[], incoming: ThreadMessage[]) {
 }
 
 export function LiveTrainerScheduleScreen() {
-  const { notify } = usePrototype()
+  const { notify } = useEloApp()
   const [phase, setPhase] = useState<Phase>('loading')
   const [error, setError] = useState('')
   const [actionError, setActionError] = useState('')
@@ -109,8 +109,12 @@ export function LiveTrainerScheduleScreen() {
   const [busy, setBusy] = useState('')
   const actionKeys = useRef(new Map<string, string>())
   const createKey = useRef('')
+  const actionInFlight = useRef(false)
+  const actionRequestVersion = useRef(0)
+  const loadRequestVersion = useRef(0)
 
   const load = useCallback(async (quiet = false) => {
+    const requestVersion = ++loadRequestVersion.current
     if (!quiet) setPhase('loading')
     setError('')
     try {
@@ -120,17 +124,24 @@ export function LiveTrainerScheduleScreen() {
         service.listScheduleSessions({ limit: 50 }),
         listEnrolledStudents(),
       ])
+      if (requestVersion !== loadRequestVersion.current) return
       setSlots(slotPage.items)
       setSessions(sessionPage.items)
       setStudents(roster)
       setPhase('ready')
     } catch (cause) {
+      if (requestVersion !== loadRequestVersion.current) return
       setError(errorMessage(cause, 'Não foi possível carregar a agenda compartilhada.'))
       setPhase('error')
     }
   }, [])
 
   useEffect(() => { void load() }, [load])
+  useEffect(() => () => {
+    loadRequestVersion.current += 1
+    actionRequestVersion.current += 1
+    actionInFlight.current = false
+  }, [])
   const days = useMemo(() => upcomingDateKeys(slots), [slots])
   const studentNames = useMemo(() => new Map(students.map((student) => [student.userId, student.displayName])), [students])
   const daySlots = slots.filter((slot) => slot.state !== 'cancelled' && dateKey(slot.startAt) === day)
@@ -139,14 +150,13 @@ export function LiveTrainerScheduleScreen() {
   const keyFor = (intent: string) => {
     const existing = actionKeys.current.get(intent)
     if (existing) return existing
-    const created = createIdempotencyKey(intent)
+    const created = createIdempotencyKey('schedule-action')
     actionKeys.current.set(intent, created)
     return created
   }
 
   const finishAction = async (intent: string, successTitle: string, successCopy: string) => {
     actionKeys.current.delete(intent)
-    setBusy('')
     setActionError('')
     notify(successTitle, successCopy)
     await load(true)
@@ -154,7 +164,9 @@ export function LiveTrainerScheduleScreen() {
 
   const respond = async (session: ScheduleSession, decision: 'confirmed' | 'declined') => {
     const intent = `${decision}-session-${session.id}`
-    if (busy) return
+    if (actionInFlight.current) return
+    actionInFlight.current = true
+    const requestVersion = ++actionRequestVersion.current
     setBusy(intent); setActionError('')
     try {
       await createOperationsService().respondScheduleSession({
@@ -162,40 +174,67 @@ export function LiveTrainerScheduleScreen() {
         decision,
         idempotencyKey: keyFor(intent),
       })
+      if (requestVersion !== actionRequestVersion.current) return
       await finishAction(intent, decision === 'confirmed' ? 'Sessão confirmada' : 'Solicitação recusada', decision === 'confirmed'
         ? 'A confirmação já está disponível na agenda do aluno.'
         : 'O horário continua disponível de acordo com a capacidade do slot.')
     } catch (cause) {
-      setBusy(''); setActionError(errorMessage(cause, 'Não foi possível atualizar esta solicitação.'))
+      if (requestVersion !== actionRequestVersion.current) return
+      setActionError(errorMessage(cause, 'Não foi possível atualizar esta solicitação.'))
+    } finally {
+      if (requestVersion === actionRequestVersion.current) {
+        actionInFlight.current = false
+        setBusy('')
+      }
     }
   }
 
   const cancelSession = async (session: ScheduleSession) => {
     const intent = `cancel-session-${session.id}`
-    if (busy) return
+    if (actionInFlight.current) return
+    actionInFlight.current = true
+    const requestVersion = ++actionRequestVersion.current
     setBusy(intent); setActionError('')
     try {
       await createOperationsService().cancelScheduleSession({ sessionId: session.id, idempotencyKey: keyFor(intent) })
+      if (requestVersion !== actionRequestVersion.current) return
       await finishAction(intent, 'Sessão cancelada', 'O cancelamento foi refletido nas duas agendas.')
     } catch (cause) {
-      setBusy(''); setActionError(errorMessage(cause, 'Não foi possível cancelar esta sessão.'))
+      if (requestVersion !== actionRequestVersion.current) return
+      setActionError(errorMessage(cause, 'Não foi possível cancelar esta sessão.'))
+    } finally {
+      if (requestVersion === actionRequestVersion.current) {
+        actionInFlight.current = false
+        setBusy('')
+      }
     }
   }
 
   const cancelSlot = async (slot: ScheduleSlot) => {
     const intent = `cancel-slot-${slot.id}`
-    if (busy) return
+    if (actionInFlight.current) return
+    actionInFlight.current = true
+    const requestVersion = ++actionRequestVersion.current
     setBusy(intent); setActionError('')
     try {
       await createOperationsService().cancelScheduleSlot({ slotId: slot.id, idempotencyKey: keyFor(intent) })
+      if (requestVersion !== actionRequestVersion.current) return
       await finishAction(intent, 'Horário removido', 'O slot e suas reservas ativas foram cancelados com registro de auditoria.')
     } catch (cause) {
-      setBusy(''); setActionError(errorMessage(cause, 'Não foi possível remover este horário.'))
+      if (requestVersion !== actionRequestVersion.current) return
+      setActionError(errorMessage(cause, 'Não foi possível remover este horário.'))
+    } finally {
+      if (requestVersion === actionRequestVersion.current) {
+        actionInFlight.current = false
+        setBusy('')
+      }
     }
   }
 
   const createSlot = async () => {
-    if (busy) return
+    if (actionInFlight.current) return
+    actionInFlight.current = true
+    const requestVersion = ++actionRequestVersion.current
     setBusy('create-slot'); setActionError('')
     try {
       const start = new Date(startAt)
@@ -209,31 +248,37 @@ export function LiveTrainerScheduleScreen() {
         place,
         capacity,
       })
+      if (requestVersion !== actionRequestVersion.current) return
       createKey.current = ''
       setCreateOpen(false)
       setDay(dateKey(start))
-      setBusy('')
       notify('Horário publicado', 'Alunos vinculados já podem solicitar este horário.')
       await load(true)
     } catch (cause) {
-      setBusy(''); setActionError(errorMessage(cause, 'Não foi possível publicar este horário.'))
+      if (requestVersion !== actionRequestVersion.current) return
+      setActionError(errorMessage(cause, 'Não foi possível publicar este horário.'))
+    } finally {
+      if (requestVersion === actionRequestVersion.current) {
+        actionInFlight.current = false
+        setBusy('')
+      }
     }
   }
 
-  if (phase === 'loading') return <OperationsLoading copy="Carregando horários e solicitações reais..." />
+  if (phase === 'loading') return <OperationsLoading copy="Carregando horários e solicitações..." />
   if (phase === 'error') return <OperationsError copy={error} onRetry={() => void load()} />
 
   return <div className="page enter live-operations-page">
-    <PageIntro eyebrow="AGENDA · WORKSPACE REAL" title={<>Espaço para acompanhar.<br />Tempo para cuidar.</>} copy="Horários, solicitações e confirmações sincronizados entre professor e aluno." action={<Button onClick={() => { setActionError(''); setCreateOpen(true) }}><Plus size={16} /> Abrir horário</Button>} />
-    <div className="live-date-strip" aria-label="Filtrar agenda por dia">{days.map((value) => <button key={value} className={day === value ? 'active' : ''} onClick={() => setDay(value)}><small>{dateLabel(value, true).split(' ')[0]}</small><strong>{value.slice(-2)}</strong><i>{slots.filter((slot) => slot.state !== 'cancelled' && dateKey(slot.startAt) === value).length}</i></button>)}</div>
-    <section className="section-block"><SectionTitle index="01" title={dateLabel(day)} copy={`${daySlots.length} ${daySlots.length === 1 ? 'horário publicado' : 'horários publicados'}`} action={<button className="text-link" onClick={() => void load()}><RefreshCw size={15} /> Atualizar</button>} />
+    <PageIntro eyebrow="AGENDA · SEU ESPAÇO" title={<>Espaço para acompanhar.<br />Tempo para cuidar.</>} copy="Horários, solicitações e confirmações sincronizados entre professor e aluno." action={<Button onClick={() => { setActionError(''); setCreateOpen(true) }}><Plus size={16} /> Abrir horário</Button>} />
+    <div className="live-date-strip" aria-label="Filtrar agenda por dia">{days.map((value) => <button type="button" key={value} className={day === value ? 'active' : ''} onClick={() => setDay(value)}><small>{dateLabel(value, true).split(' ')[0]}</small><strong>{value.slice(-2)}</strong><i>{slots.filter((slot) => slot.state !== 'cancelled' && dateKey(slot.startAt) === value).length}</i></button>)}</div>
+    <section className="section-block"><SectionTitle index="01" title={dateLabel(day)} copy={`${daySlots.length} ${daySlots.length === 1 ? 'horário publicado' : 'horários publicados'}`} action={<button type="button" className="text-link" onClick={() => void load()}><RefreshCw size={15} /> Atualizar</button>} />
       {actionError && <p className="operations-error" role="alert">{actionError}</p>}
       <div className="live-slot-list">{daySlots.map((slot) => {
         const slotSessions = sessions.filter((session) => session.slotId === slot.id && session.state !== 'cancelled' && session.state !== 'declined')
         const confirmed = slotSessions.filter((session) => session.state === 'confirmed').length
         return <article className={`live-slot-card ${slot.state}`} key={slot.id}>
-          <header><time>{timeLabel(slot.startAt)}</time><div><Eyebrow>{modeLabels[slot.mode]} · {slot.durationMinutes} MIN</Eyebrow><h3>{slot.place}</h3><p>{confirmed}/{slot.capacity} confirmadas · {slotSessions.filter((session) => session.state === 'requested').length} aguardando decisão</p></div><span className={`tag ${slot.state === 'full' ? 'warning' : 'success'}`}>{slot.state === 'full' ? 'Lotado' : 'Aberto'}</span><button className="slot-delete" disabled={Boolean(busy)} onClick={() => void cancelSlot(slot)} aria-label={`Remover horário das ${timeLabel(slot.startAt)}`}>{busy === `cancel-slot-${slot.id}` ? <LoaderCircle className="spin" size={16} /> : <Trash2 size={16} />}</button></header>
-          {slotSessions.length > 0 ? <div className="live-session-list">{slotSessions.map((session) => <div key={session.id}><span className="person-avatar">{initials(studentNames.get(session.studentUserId) ?? 'Aluno')}</span><span><strong>{studentNames.get(session.studentUserId) ?? 'Aluno vinculado'}</strong><small>{session.state === 'requested' ? 'Solicitação aguardando seu olhar' : 'Sessão confirmada'} · {dateTimeLabel(session.requestedAt)}</small></span><div>{session.state === 'requested' ? <><Button disabled={Boolean(busy)} onClick={() => void respond(session, 'confirmed')}>{busy === `confirmed-session-${session.id}` ? <LoaderCircle className="spin" size={15} /> : <Check size={15} />} Aprovar</Button><Button variant="ghost" disabled={Boolean(busy)} onClick={() => void respond(session, 'declined')}><X size={15} /> Recusar</Button></> : <button disabled={Boolean(busy)} onClick={() => void cancelSession(session)} aria-label="Cancelar sessão confirmada">{busy === `cancel-session-${session.id}` ? <LoaderCircle className="spin" size={16} /> : <Trash2 size={16} />}</button>}</div></div>)}</div> : <div className="slot-empty"><UserRound size={17} /><span><strong>Aguardando solicitações</strong><small>O horário já aparece para os alunos vinculados.</small></span></div>}
+          <header><time>{timeLabel(slot.startAt)}</time><div><Eyebrow>{modeLabels[slot.mode]} · {slot.durationMinutes} MIN</Eyebrow><h3>{slot.place}</h3><p>{confirmed}/{slot.capacity} confirmadas · {slotSessions.filter((session) => session.state === 'requested').length} aguardando decisão</p></div><span className={`tag ${slot.state === 'full' ? 'warning' : 'success'}`}>{slot.state === 'full' ? 'Lotado' : 'Aberto'}</span><button type="button" className="slot-delete" disabled={Boolean(busy)} onClick={() => void cancelSlot(slot)} aria-label={`Remover horário das ${timeLabel(slot.startAt)}`}>{busy === `cancel-slot-${slot.id}` ? <LoaderCircle className="spin" size={16} /> : <Trash2 size={16} />}</button></header>
+          {slotSessions.length > 0 ? <div className="live-session-list">{slotSessions.map((session) => <div key={session.id}><span className="person-avatar">{initials(studentNames.get(session.studentUserId) ?? 'Aluno')}</span><span><strong>{studentNames.get(session.studentUserId) ?? 'Aluno vinculado'}</strong><small>{session.state === 'requested' ? 'Solicitação aguardando seu olhar' : 'Sessão confirmada'} · {dateTimeLabel(session.requestedAt)}</small></span><div>{session.state === 'requested' ? <><Button disabled={Boolean(busy)} onClick={() => void respond(session, 'confirmed')}>{busy === `confirmed-session-${session.id}` ? <LoaderCircle className="spin" size={15} /> : <Check size={15} />} Aprovar</Button><Button variant="ghost" disabled={Boolean(busy)} onClick={() => void respond(session, 'declined')}><X size={15} /> Recusar</Button></> : <button type="button" disabled={Boolean(busy)} onClick={() => void cancelSession(session)} aria-label="Cancelar sessão confirmada">{busy === `cancel-session-${session.id}` ? <LoaderCircle className="spin" size={16} /> : <Trash2 size={16} />}</button>}</div></div>)}</div> : <div className="slot-empty"><UserRound size={17} /><span><strong>Aguardando solicitações</strong><small>O horário já aparece para os alunos vinculados.</small></span></div>}
         </article>
       })}</div>
       {!daySlots.length && <div className="empty-state compact"><CalendarDays size={28} /><h3>Dia aberto.</h3><p>Publique um horário para que alunos vinculados possam solicitar.</p><Button variant="secondary" onClick={() => setCreateOpen(true)}>Abrir horário</Button></div>}
@@ -244,7 +289,7 @@ export function LiveTrainerScheduleScreen() {
 
 export function LiveStudentScheduleScreen() {
   const { membership } = useAuth()
-  const { notify } = usePrototype()
+  const { notify } = useEloApp()
   const [phase, setPhase] = useState<Phase>('loading')
   const [error, setError] = useState('')
   const [actionError, setActionError] = useState('')
@@ -253,8 +298,12 @@ export function LiveStudentScheduleScreen() {
   const [day, setDay] = useState('all')
   const [busy, setBusy] = useState('')
   const keys = useRef(new Map<string, string>())
+  const actionInFlight = useRef(false)
+  const actionRequestVersion = useRef(0)
+  const loadRequestVersion = useRef(0)
 
   const load = useCallback(async (quiet = false) => {
+    const requestVersion = ++loadRequestVersion.current
     if (!quiet) setPhase('loading')
     setError('')
     try {
@@ -263,15 +312,22 @@ export function LiveStudentScheduleScreen() {
         service.listScheduleSlots({ limit: 50 }),
         service.listScheduleSessions({ limit: 50 }),
       ])
+      if (requestVersion !== loadRequestVersion.current) return
       setSlots(slotPage.items)
       setSessions(sessionPage.items)
       setPhase('ready')
     } catch (cause) {
+      if (requestVersion !== loadRequestVersion.current) return
       setError(errorMessage(cause, 'Não foi possível carregar sua agenda.'))
       setPhase('error')
     }
   }, [])
   useEffect(() => { void load() }, [load])
+  useEffect(() => () => {
+    loadRequestVersion.current += 1
+    actionRequestVersion.current += 1
+    actionInFlight.current = false
+  }, [])
   const days = useMemo(() => upcomingDateKeys(slots), [slots])
   const upcoming = slots.filter((slot) => slot.state !== 'cancelled' && Date.parse(slot.startAt) > Date.now())
     .filter((slot) => day === 'all' || dateKey(slot.startAt) === day)
@@ -280,44 +336,62 @@ export function LiveStudentScheduleScreen() {
   const keyFor = (intent: string) => {
     const stored = keys.current.get(intent)
     if (stored) return stored
-    const created = createIdempotencyKey(intent)
+    const created = createIdempotencyKey('schedule-action')
     keys.current.set(intent, created)
     return created
   }
 
   const request = async (slot: ScheduleSlot) => {
     const intent = `request-slot-${slot.id}`
-    if (busy) return
+    if (actionInFlight.current) return
+    actionInFlight.current = true
+    const requestVersion = ++actionRequestVersion.current
     setBusy(intent); setActionError('')
     try {
       await createOperationsService().requestScheduleSlot({ slotId: slot.id, idempotencyKey: keyFor(intent) })
-      keys.current.delete(intent); setBusy('')
+      if (requestVersion !== actionRequestVersion.current) return
+      keys.current.delete(intent)
       notify('Solicitação enviada', 'Seu professor precisa confirmar antes que o horário fique reservado.')
       await load(true)
     } catch (cause) {
-      setBusy(''); setActionError(errorMessage(cause, 'Não foi possível solicitar este horário.'))
+      if (requestVersion !== actionRequestVersion.current) return
+      setActionError(errorMessage(cause, 'Não foi possível solicitar este horário.'))
+    } finally {
+      if (requestVersion === actionRequestVersion.current) {
+        actionInFlight.current = false
+        setBusy('')
+      }
     }
   }
 
   const cancel = async (session: ScheduleSession) => {
     const intent = `cancel-own-session-${session.id}`
-    if (busy) return
+    if (actionInFlight.current) return
+    actionInFlight.current = true
+    const requestVersion = ++actionRequestVersion.current
     setBusy(intent); setActionError('')
     try {
       await createOperationsService().cancelOwnScheduleSession({ sessionId: session.id, idempotencyKey: keyFor(intent) })
-      keys.current.delete(intent); setBusy('')
+      if (requestVersion !== actionRequestVersion.current) return
+      keys.current.delete(intent)
       notify('Solicitação cancelada', 'A alteração já está visível para o seu professor.')
       await load(true)
     } catch (cause) {
-      setBusy(''); setActionError(errorMessage(cause, 'Não foi possível cancelar esta sessão.'))
+      if (requestVersion !== actionRequestVersion.current) return
+      setActionError(errorMessage(cause, 'Não foi possível cancelar esta sessão.'))
+    } finally {
+      if (requestVersion === actionRequestVersion.current) {
+        actionInFlight.current = false
+        setBusy('')
+      }
     }
   }
 
   if (phase === 'loading') return <OperationsLoading copy="Sincronizando sua agenda..." />
   if (phase === 'error') return <OperationsError copy={error} onRetry={() => void load()} />
 
-  return <div className="page enter live-operations-page"><PageIntro eyebrow="SUA AGENDA · WORKSPACE REAL" title="Treino marcado, mente livre." copy={`Veja horários publicados em ${membership?.workspaceName ?? 'seu espaço'} e acompanhe cada confirmação.`} action={<button className="text-link" onClick={() => void load()}><RefreshCw size={15} /> Atualizar</button>} />
-    <div className="date-pills live-date-pills"><button className={day === 'all' ? 'active' : ''} onClick={() => setDay('all')}>Todos</button>{days.map((value) => <button className={day === value ? 'active' : ''} onClick={() => setDay(value)} key={value}>{dateLabel(value, true)}</button>)}</div>
+  return <div className="page enter live-operations-page"><PageIntro eyebrow="SUA AGENDA · ELO" title="Treino marcado, mente livre." copy={`Veja horários publicados em ${membership?.workspaceName ?? 'seu espaço'} e acompanhe cada confirmação.`} action={<button type="button" className="text-link" onClick={() => void load()}><RefreshCw size={15} /> Atualizar</button>} />
+    <div className="date-pills live-date-pills"><button type="button" className={day === 'all' ? 'active' : ''} onClick={() => setDay('all')}>Todos</button>{days.map((value) => <button type="button" className={day === value ? 'active' : ''} onClick={() => setDay(value)} key={value}>{dateLabel(value, true)}</button>)}</div>
     {actionError && <p className="operations-error" role="alert">{actionError}</p>}
     <div className="student-schedule-list live-student-schedule">{upcoming.map((slot) => {
       const latest = sessions.filter((session) => session.slotId === slot.id).sort((a, b) => Date.parse(b.requestedAt) - Date.parse(a.requestedAt))[0]
@@ -330,7 +404,7 @@ export function LiveStudentScheduleScreen() {
 
 export function LiveMessagesScreen() {
   const { profile, membership } = useAuth()
-  const { messageSessionDrafts, selectedStudentId, setMessageSessionDrafts, setSelectedStudentId, notify } = usePrototype()
+  const { messageSessionDrafts, selectedStudentId, setMessageSessionDrafts, setSelectedStudentId, notify } = useEloApp()
   const isTrainer = profile?.accountRole === 'trainer'
   const [students, setStudents] = useState<EnrolledStudent[]>([])
   const [activeId, setActiveId] = useState(isTrainer ? '' : profile?.id ?? '')
@@ -525,17 +599,17 @@ export function LiveMessagesScreen() {
 
   const counterpartName = isTrainer ? activeStudent?.displayName ?? 'Aluno vinculado' : membership?.trainerName ?? 'Seu professor'
   return <div className="page message-page enter live-operations-page">
-    <PageIntro eyebrow="CONVERSAS · CANAL PROFISSIONAL" title="O contexto fica junto." copy={isTrainer ? 'Mensagens reais ligadas ao vínculo de cada aluno.' : `Sua conversa privada com ${counterpartName}, dentro do acompanhamento.`} action={<button className="text-link" disabled={sending} onClick={() => void loadThread()}><RefreshCw size={15} /> Atualizar</button>} />
+    <PageIntro eyebrow="CONVERSAS · CANAL PROFISSIONAL" title="O contexto fica junto." copy={isTrainer ? 'Mensagens ligadas ao vínculo de cada aluno.' : `Sua conversa privada com ${counterpartName}, dentro do acompanhamento.`} action={<button type="button" className="text-link" disabled={sending} onClick={() => void loadThread()}><RefreshCw size={15} /> Atualizar</button>} />
     <section className={`messenger ${isTrainer ? '' : 'student-thread-only'}`}>
       {isTrainer && <aside className="conversation-list">
         <label className="search-field"><Search size={16} /><span className="sr-only">Buscar conversa</span><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar conversa" /></label>
-        {conversations.map((student) => <button disabled={sending} className={student.userId === activeId ? 'active' : ''} key={student.userId} onClick={() => selectConversation(student.userId)}><span className="person-avatar">{initials(student.displayName)}</span><span><strong>{student.displayName}</strong><small>{student.userId === activeId ? messages[0]?.body ?? 'Canal aberto' : 'Abrir conversa'}</small></span></button>)}
+        {conversations.map((student) => <button type="button" disabled={sending} className={student.userId === activeId ? 'active' : ''} key={student.userId} onClick={() => selectConversation(student.userId)}><span className="person-avatar">{initials(student.displayName)}</span><span><strong>{student.displayName}</strong><small>{student.userId === activeId ? messages[0]?.body ?? 'Canal aberto' : 'Abrir conversa'}</small></span></button>)}
       </aside>}
       {isTrainer && <label className="mobile-conversation-picker"><span>Conversa</span><select value={activeId} disabled={sending} onChange={(event) => selectConversation(event.target.value)}>{students.map((student) => <option value={student.userId} key={student.userId}>{student.displayName}</option>)}</select></label>}
       <div className="thread">
-        <header><span className="person-avatar">{initials(counterpartName)}</span><div><strong>{counterpartName}</strong><small><i /> vínculo ativo e privado</small></div><button aria-label="Informações da conversa" onClick={() => notify('Canal profissional', 'As mensagens ficam vinculadas ao workspace e só podem ser lidas pelas pessoas autorizadas.')}><MoreHorizontal /></button></header>
+        <header><span className="person-avatar">{initials(counterpartName)}</span><div><strong>{counterpartName}</strong><small><i /> vínculo ativo e privado</small></div><button type="button" aria-label="Informações da conversa" onClick={() => notify('Canal profissional', 'As mensagens ficam vinculadas ao workspace e só podem ser lidas pelas pessoas autorizadas.')}><MoreHorizontal /></button></header>
         <div className="message-history" aria-live="polite">
-          {nextOffset !== null && <button className="load-older" disabled={loadingOlder} onClick={() => void loadOlder()}>{loadingOlder ? <><LoaderCircle className="spin" size={14} /> Carregando...</> : 'Carregar anteriores'}</button>}
+          {nextOffset !== null && <button type="button" className="load-older" disabled={loadingOlder} onClick={() => void loadOlder()}>{loadingOlder ? <><LoaderCircle className="spin" size={14} /> Carregando...</> : 'Carregar anteriores'}</button>}
           {shownMessages.map((message) => <div className={message.senderUserId === profile?.id ? 'message mine' : 'message'} key={message.id}><p>{message.body}</p><time>{dateTimeLabel(message.createdAt)}</time></div>)}
           {!shownMessages.length && <div className="thread-empty"><MessageCircle size={24} /><strong>O canal está aberto.</strong><small>Envie a primeira mensagem necessária para o acompanhamento.</small></div>}
         </div>
@@ -562,7 +636,7 @@ export function LiveMessagesScreen() {
 
 export function LiveStudentAbsenceFlow({ onBack, onDone }: { onBack: () => void; onDone: () => void }) {
   const { membership } = useAuth()
-  const { notify } = usePrototype()
+  const { notify } = useEloApp()
   const [phase, setPhase] = useState<Phase>('loading')
   const [error, setError] = useState('')
   const [session, setSession] = useState<ScheduleSession | null>(null)
@@ -607,7 +681,7 @@ export function LiveStudentAbsenceFlow({ onBack, onDone }: { onBack: () => void;
   }
 
   if (phase === 'loading') return <section className="assistant-flow"><div className="live-loading"><LoaderCircle className="spin" size={22} /><p>Localizando sua próxima sessão...</p></div></section>
-  return <section className="assistant-flow"><button className="back-button" onClick={onBack}><ArrowRight size={15} style={{ transform: 'rotate(180deg)' }} /> Voltar</button><div className="absence-card"><CalendarDays size={29} /><Eyebrow>SEM CULPA · COM CONTEXTO REAL</Eyebrow>{phase === 'error' ? <><h3>A agenda não abriu agora.</h3><p>{error}</p><div><Button onClick={() => void load()}>Tentar novamente</Button><Button variant="ghost" onClick={onBack}>Voltar</Button></div></> : session && slot ? <><h3>Cancelar sua próxima sessão?</h3><p>{dateTimeLabel(slot.startAt)} · {modeLabels[slot.mode]} · {slot.place}. O cancelamento fica visível para {membership?.trainerName ?? 'seu professor'} e libera a capacidade do horário.</p>{error && <p className="operations-error" role="alert">{error}</p>}<div><Button disabled={saving} onClick={() => void cancel()}>{saving ? <LoaderCircle className="spin" size={16} /> : <Send size={16} />} Avisar e cancelar</Button><Button variant="ghost" onClick={onBack}>Manter sessão</Button></div></> : <><h3>Nenhuma sessão ativa para cancelar.</h3><p>Você não tem pedido aguardando confirmação nem sessão futura reservada.</p><div><Button onClick={onDone}>Ver agenda</Button><Button variant="ghost" onClick={onBack}>Voltar</Button></div></>}</div></section>
+  return <section className="assistant-flow"><button type="button" className="back-button" onClick={onBack}><ArrowRight size={15} style={{ transform: 'rotate(180deg)' }} /> Voltar</button><div className="absence-card"><CalendarDays size={29} /><Eyebrow>SEM CULPA · COM CONTEXTO</Eyebrow>{phase === 'error' ? <><h3>A agenda não abriu agora.</h3><p>{error}</p><div><Button onClick={() => void load()}>Tentar novamente</Button><Button variant="ghost" onClick={onBack}>Voltar</Button></div></> : session && slot ? <><h3>Cancelar sua próxima sessão?</h3><p>{dateTimeLabel(slot.startAt)} · {modeLabels[slot.mode]} · {slot.place}. O cancelamento fica visível para {membership?.trainerName ?? 'seu professor'} e libera a capacidade do horário.</p>{error && <p className="operations-error" role="alert">{error}</p>}<div><Button disabled={saving} onClick={() => void cancel()}>{saving ? <LoaderCircle className="spin" size={16} /> : <Send size={16} />} Avisar e cancelar</Button><Button variant="ghost" onClick={onBack}>Manter sessão</Button></div></> : <><h3>Nenhuma sessão ativa para cancelar.</h3><p>Você não tem pedido aguardando confirmação nem sessão futura reservada.</p><div><Button onClick={onDone}>Ver agenda</Button><Button variant="ghost" onClick={onBack}>Voltar</Button></div></>}</div></section>
 }
 
 function OperationsLoading({ copy }: { copy: string }) {

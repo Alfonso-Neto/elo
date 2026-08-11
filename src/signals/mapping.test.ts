@@ -90,4 +90,14 @@ describe('pain-report mapping', () => {
       'numbness_or_weakness',
     ])
   })
+
+  it('rejects visually deceptive text while preserving ordinary multiline detail', () => {
+    const base = {
+      region: 'Joelho', side: 'left', movement: 'Agachamento', timing: 'during_activity',
+      intensity: 5, onset: '2026-08-07T12:00:00.000Z', redFlags: [],
+    } as const
+    expect(() => mapPainReportDraft({ ...base, region: 'Joe\u202Elho' }, { now: new Date('2026-08-07T13:00:00.000Z') })).toThrow()
+    expect(() => mapPainReportDraft({ ...base, detail: 'linha 1\nlinha 2' }, { now: new Date('2026-08-07T13:00:00.000Z') })).not.toThrow()
+    expect(() => mapPainReportDraft({ ...base, detail: 'texto\u200boculto' }, { now: new Date('2026-08-07T13:00:00.000Z') })).toThrow()
+  })
 })

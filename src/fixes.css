@@ -7,9 +7,6 @@ body{overflow-x:hidden}
 .switch-label input:focus-visible+i{outline:2px solid var(--blue);outline-offset:3px}
 .mobile-more-menu{display:grid}
 .mobile-more-menu>button{width:100%;min-height:54px;display:flex;align-items:center;gap:11px;border:0;border-top:1px solid var(--line);background:transparent;text-align:left}
-.mobile-more-menu .role-switch{margin:12px 0;border-color:var(--line);background:var(--white)}
-.mobile-more-menu .role-switch button{color:var(--muted)}
-.mobile-more-menu .role-switch button.active{color:var(--ink);background:var(--lime)}
 .builder-validation{display:flex;align-items:center;gap:8px;margin:12px 0 86px;padding:12px 14px;border:1px solid #d7aa63;background:#f5e8ce;color:#694800;font-size:11px}
 .page,.today-workout>div,.assistant-page .page-intro>div{min-width:0}
 .page h1,.page h2,.page h3,.page p{overflow-wrap:break-word}
@@ -18,16 +15,11 @@ body{overflow-x:hidden}
 .template-grid>button>svg{margin:28px 0 20px}
 .template-grid footer svg{margin:0}
 
-@media (min-width:761px) and (max-width:1040px){
-  .sidebar-bottom .role-switch{display:grid;grid-template-columns:1fr 1fr;padding:3px}
-  .sidebar-bottom .role-switch button{display:flex!important;font-size:0;padding:0}
-}
-
 @media(max-width:760px){
   .messenger{grid-template-rows:auto 1fr}
   .messenger.student-thread-only{grid-template-rows:1fr}
   .mobile-conversation-picker{display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid var(--line);background:var(--paper)}
-  .mobile-conversation-picker span{color:var(--muted);font:600 8px 'Roboto Mono'}
+  .mobile-conversation-picker span{color:var(--muted);font:600 8px var(--mono)}
   .mobile-conversation-picker select{min-width:0;flex:1;height:42px;padding:0 10px;border:1px solid var(--line);background:var(--white)}
 }
 
@@ -73,12 +65,6 @@ button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-vis
 .role-student .nav-item.active{background:var(--apricot);color:#fff}
 .nav-item b,.nav-item.active b{background:var(--apricot);color:#fff}
 .role-student .nav-item b,.role-student .nav-item.active b{background:var(--pine);color:#fff}
-.sidebar-bottom .role-switch{padding:4px;border-color:var(--line);border-radius:999px;background:#f4f6f1}
-.sidebar-bottom .role-switch button{min-height:38px;border-radius:999px;color:var(--ink-soft)}
-.sidebar-bottom .role-switch button.active{background:var(--pine);color:#fff}
-.role-student .sidebar-bottom .role-switch button.active{background:var(--apricot);color:#fff}
-.reset-button{color:var(--ink-soft)}
-.reset-button:hover{color:var(--pine)}
 .sidebar-profile{border-color:var(--line)}
 .sidebar-profile .avatar{background:#e7efe9;color:var(--pine)}
 .sidebar-profile small{color:var(--ink-soft)}
@@ -93,10 +79,6 @@ button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-vis
 .topbar-title h1{font-weight:700;letter-spacing:-.02em}
 .top-search,.icon-button,.search-field,.segmented{border-radius:14px;background:rgba(255,255,255,.88)}
 .top-search:hover,.icon-button:hover{border-color:#c7d3ca;background:#fff}
-.role-switch.compact{border-radius:999px;background:#fff}
-.role-switch.compact button{border-radius:999px}
-.role-switch.compact button.active{background:var(--pine);color:#fff}
-.role-student .role-switch.compact button.active{background:var(--apricot);color:#fff}
 
 .button{border-radius:14px;border-color:var(--ink);background:var(--ink);font-size:13px}
 .button:hover{border-color:var(--pine-deep);background:var(--pine-deep)}
@@ -222,7 +204,7 @@ input:not([type='checkbox']):not([type='range']),textarea,select{border-radius:1
 .form-submit,.builder-savebar{border-radius:18px 18px 0 0;background:rgba(255,255,255,.88)}
 .floating-copilot{border-radius:20px;background:linear-gradient(155deg,var(--pine),var(--pine-deep));color:#fff;box-shadow:0 12px 24px -6px rgba(27,94,67,.5)}
 
-/* The model gallery follows the partner prototype: two columns and a fully
+/* The model gallery follows the Elo product direction: two columns and a fully
    in-flow card, so the question count can never collide with the labels. */
 .template-grid{width:min(820px,100%);grid-template-columns:repeat(2,minmax(0,1fr));gap:11px}
 .template-grid button{
@@ -340,7 +322,7 @@ input:not([type='checkbox']):not([type='range']),textarea,select{border-radius:1
   .template-grid button{padding:12px}
 }
 
-/* Form builder alignment: preserve the reference prototype's editorial rhythm. */
+/* Form builder alignment: preserve Elo's editorial rhythm. */
 .builder-toolbar input,.form-meta input,.question-card>header input{border-radius:0}
 .form-meta input{font:600 19px/1.2 var(--body)}
 .question-card>header input{min-width:0;background:transparent;font:500 14px/1.35 var(--body)}

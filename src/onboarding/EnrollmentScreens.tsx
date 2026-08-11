@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { ArrowRight, Check, Clipboard, Clock3, Link2, LoaderCircle, LogOut, Mail, RefreshCw, ShieldCheck, UserPlus, Users } from 'lucide-react'
 import { Brand, Button, Eyebrow, Modal, PageIntro } from '../components'
 import { useAuth } from '../auth/auth-context'
-import { usePrototype } from '../prototype-context'
+import { useEloApp } from '../app-state'
 import {
   acceptWorkspaceInvitation,
   createWorkspaceInvitation,
@@ -21,12 +21,15 @@ export function StudentEnrollmentOnboarding() {
   const [message, setMessage] = useState<string | null>(null)
   const [accepted, setAccepted] = useState<AcceptedInvitation | null>(null)
   const codeInputRef = useRef<HTMLInputElement>(null)
+  const acceptInFlight = useRef(false)
+  const continueInFlight = useRef(false)
 
   useEffect(() => { document.title = 'Vincular professor · Elo' }, [])
 
   const submit = async (event: FormEvent) => {
     event.preventDefault()
-    if (phase === 'loading') return
+    if (acceptInFlight.current) return
+    acceptInFlight.current = true
     setPhase('loading')
     setMessage(null)
     try {
@@ -41,10 +44,14 @@ export function StudentEnrollmentOnboarding() {
         codeInputRef.current?.focus()
         codeInputRef.current?.select()
       })
+    } finally {
+      acceptInFlight.current = false
     }
   }
 
   const continueToApp = async () => {
+    if (continueInFlight.current) return
+    continueInFlight.current = true
     setPhase('loading')
     setMessage(null)
     try {
@@ -53,6 +60,8 @@ export function StudentEnrollmentOnboarding() {
     } catch {
       setPhase('error')
       setMessage('O vínculo foi aceito, mas não foi possível abrir o espaço agora. Atualize a página e tente novamente.')
+    } finally {
+      continueInFlight.current = false
     }
   }
 
@@ -92,7 +101,7 @@ export function StudentEnrollmentOnboarding() {
           <form className="enrollment-form" onSubmit={(event) => void submit(event)} noValidate aria-busy={phase === 'loading'}>
             <div className="enrollment-code-field">
               <label htmlFor="invite-code">Código de convite</label>
-              <div className={phase === 'error' ? 'enrollment-code-input has-error' : 'enrollment-code-input'}><Link2 size={18} aria-hidden="true" /><input ref={codeInputRef} id="invite-code" autoComplete="off" autoCapitalize="characters" spellCheck={false} value={code} onChange={(event) => { setCode(event.target.value); if (phase === 'error') { setPhase('idle'); setMessage(null) } }} placeholder="ELO-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX" aria-invalid={phase === 'error'} aria-describedby={phase === 'error' ? 'invite-code-help invite-code-error' : 'invite-code-help'} /></div>
+              <div className={phase === 'error' ? 'enrollment-code-input has-error' : 'enrollment-code-input'}><Link2 size={18} aria-hidden="true" /><input ref={codeInputRef} id="invite-code" maxLength={43} autoComplete="off" autoCapitalize="characters" spellCheck={false} value={code} onChange={(event) => { setCode(event.target.value); if (phase === 'error') { setPhase('idle'); setMessage(null) } }} placeholder="ELO-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX" aria-invalid={phase === 'error'} aria-describedby={phase === 'error' ? 'invite-code-help invite-code-error' : 'invite-code-help'} /></div>
               <small id="invite-code-help">O código vale por 72 horas e só pode ser usado uma vez.</small>
             </div>
             {message && <p id="invite-code-error" className="enrollment-alert" role="alert">{message}</p>}
@@ -113,7 +122,7 @@ function initialsFor(name: string) {
 
 export function TrainerStudentsEnrollment() {
   const { membership } = useAuth()
-  const { navigate, setSelectedStudentId } = usePrototype()
+  const { navigate, setSelectedStudentId } = useEloApp()
   const [students, setStudents] = useState<EnrolledStudent[]>([])
   const [listPhase, setListPhase] = useState<AsyncPhase>('loading')
   const [listError, setListError] = useState<string | null>(null)
@@ -124,6 +133,8 @@ export function TrainerStudentsEnrollment() {
   const [invitation, setInvitation] = useState<CreatedInvitation | null>(null)
   const [copied, setCopied] = useState(false)
   const emailInputRef = useRef<HTMLInputElement>(null)
+  const inviteInFlight = useRef(false)
+  const inviteRequestVersion = useRef(0)
 
   const loadStudents = useCallback(async () => {
     setListPhase('loading')
@@ -138,8 +149,11 @@ export function TrainerStudentsEnrollment() {
   }, [])
 
   useEffect(() => { void loadStudents() }, [loadStudents])
+  useEffect(() => () => { inviteRequestVersion.current += 1 }, [])
 
   const closeInvite = () => {
+    inviteRequestVersion.current += 1
+    inviteInFlight.current = false
     setInviteOpen(false)
     setEmail('')
     setInvitation(null)
@@ -150,21 +164,27 @@ export function TrainerStudentsEnrollment() {
 
   const createInvite = async (event: FormEvent) => {
     event.preventDefault()
-    if (invitePhase === 'loading') return
+    if (inviteInFlight.current) return
+    inviteInFlight.current = true
+    const requestVersion = ++inviteRequestVersion.current
     setInvitePhase('loading')
     setInviteError(null)
     setInvitation(null)
     try {
       const created = await createWorkspaceInvitation(email)
+      if (requestVersion !== inviteRequestVersion.current) return
       setInvitation(created)
       setInvitePhase('success')
     } catch (error) {
+      if (requestVersion !== inviteRequestVersion.current) return
       setInvitePhase('error')
       setInviteError(error instanceof Error ? error.message : 'Não foi possível gerar o convite agora.')
       window.requestAnimationFrame(() => {
         emailInputRef.current?.focus()
         emailInputRef.current?.select()
       })
+    } finally {
+      if (requestVersion === inviteRequestVersion.current) inviteInFlight.current = false
     }
   }
 
@@ -187,13 +207,13 @@ export function TrainerStudentsEnrollment() {
   return <div className="page enter trainer-enrollment-page">
     <PageIntro
       eyebrow={`SEU ESPAÇO · ${students.length} ${students.length === 1 ? 'ALUNO ATIVO' : 'ALUNOS ATIVOS'}`}
-      title={<>Acompanhamentos<br />com vínculo real.</>}
+      title={<>Acompanhamentos<br />com vínculo ativo.</>}
       copy={`Convide alunos para ${membership?.workspaceName ?? 'seu espaço'} e acompanhe quem já aceitou o código.`}
       action={<Button onClick={() => setInviteOpen(true)}><UserPlus size={16} /> Convidar aluno</Button>}
     />
 
     <section className="remote-students-section" aria-live="polite" aria-busy={listPhase === 'loading'}>
-      <header><div><Eyebrow>BASE VINCULADA</Eyebrow><h3>Alunos deste espaço</h3></div><button className="text-link" onClick={() => void loadStudents()} disabled={listPhase === 'loading'}><RefreshCw className={listPhase === 'loading' ? 'spin' : ''} size={15} /> Atualizar</button></header>
+      <header><div><Eyebrow>BASE VINCULADA</Eyebrow><h3>Alunos deste espaço</h3></div><button type="button" className="text-link" onClick={() => void loadStudents()} disabled={listPhase === 'loading'}><RefreshCw className={listPhase === 'loading' ? 'spin' : ''} size={15} /> Atualizar</button></header>
       {listPhase === 'loading' && <div className="enrollment-loading"><LoaderCircle className="spin" size={23} /><p>Buscando vínculos ativos...</p></div>}
       {listPhase === 'error' && <div className="empty-state compact"><ShieldCheck size={27} /><h3>Não foi possível abrir a base</h3><p>{listError}</p><Button variant="secondary" onClick={() => void loadStudents()}>Tentar novamente</Button></div>}
       {listPhase === 'success' && students.length === 0 && <div className="empty-state"><Users size={29} /><h3>Seu primeiro vínculo começa aqui.</h3><p>Gere um código para o aluno. Ele aparecerá nesta base depois de aceitar.</p><Button variant="secondary" onClick={() => setInviteOpen(true)}><UserPlus size={16} /> Criar convite</Button></div>}
@@ -216,7 +236,7 @@ export function TrainerStudentsEnrollment() {
         <Button className="wide" variant="secondary" onClick={closeInvite}>Concluir</Button>
       </div> : <form className="form-stack invitation-form" onSubmit={(event) => void createInvite(event)} noValidate aria-busy={invitePhase === 'loading'}>
         <p className="modal-lead">Use exatamente o email que o aluno cadastrou. O código não permite trocar de conta ou escolher outro espaço.</p>
-        <label><span>Email do aluno</span><input ref={emailInputRef} id="invitation-email" autoFocus type="email" autoComplete="email" value={email} onChange={(event) => { setEmail(event.target.value); if (invitePhase === 'error') { setInvitePhase('idle'); setInviteError(null) } }} placeholder="aluno@exemplo.com" aria-invalid={invitePhase === 'error'} aria-describedby={invitePhase === 'error' ? 'invitation-email-error' : undefined} /></label>
+        <label><span>Email do aluno</span><input ref={emailInputRef} id="invitation-email" autoFocus type="email" maxLength={320} autoComplete="email" value={email} onChange={(event) => { setEmail(event.target.value); if (invitePhase === 'error') { setInvitePhase('idle'); setInviteError(null) } }} placeholder="aluno@exemplo.com" aria-invalid={invitePhase === 'error'} aria-describedby={invitePhase === 'error' ? 'invitation-email-error' : undefined} /></label>
         {inviteError && <p id="invitation-email-error" className="enrollment-alert" role="alert">{inviteError}</p>}
         <Button className="wide" type="submit" disabled={invitePhase === 'loading' || !email.trim()}>
           {invitePhase === 'loading' ? <><LoaderCircle className="spin" size={17} /> Gerando código...</> : <>Gerar código de homologação <ArrowRight size={16} /></>}

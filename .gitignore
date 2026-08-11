@@ -8,3 +8,11 @@ dist/
 .env.*.local
 supabase/.branches/
 supabase/.temp/
+.pnpm-store/
+playwright-report/
+test-results/
+.ultron/
+
+# Local visual references; they are not part of the authenticated web runtime.
+elo-*.png
+elo-prototipo*.html

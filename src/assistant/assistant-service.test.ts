@@ -61,6 +61,23 @@ describe('assistant client boundary', () => {
     await expect(createAssistantService(boundary).requestPainTriage({ workspaceId, studentId, painReportId: reportId, idempotencyKey: key })).rejects.toMatchObject({ code: 'unavailable' })
   })
 
+  it('rejects duplicated identifiers, invisible text, and unsafe red-flag combinations', async () => {
+    const invalidProposals = [
+      { ...proposal, questions: [proposal.questions[0], proposal.questions[0]] },
+      { ...proposal, summary: 'Resumo\u202einvisível' },
+      {
+        ...proposal,
+        urgency: 'emergency',
+        red_flags: [{ code: 'neurological', label: 'Sinal', evidence: 'Relato', recommended_action: 'Interromper' }],
+      },
+    ]
+    for (const invalidProposal of invalidProposals) {
+      const { boundary } = boundaryWith({ run_id: runId, proposal_id: proposalId, completion_mode: 'model', proposal: invalidProposal })
+      await expect(createAssistantService(boundary).requestPainTriage({ workspaceId, studentId, painReportId: reportId, idempotencyKey: key }))
+        .rejects.toMatchObject({ code: 'unavailable' })
+    }
+  })
+
   it('maps remote errors without retaining sensitive causes', async () => {
     const { boundary } = boundaryWith(null, { context: { status: 403 }, message: 'private workspace id' })
     let caught: unknown

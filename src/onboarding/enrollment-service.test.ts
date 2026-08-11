@@ -99,4 +99,22 @@ describe('workspace enrollment service', () => {
     }]).boundary
     await expect(listEnrolledStudents(malformedStudent)).rejects.toThrow('Não foi possível carregar seus alunos agora.')
   })
+
+  it('rejects missing or ambiguous single-row mutation responses', async () => {
+    const accepted = {
+      workspace_id: validWorkspaceId,
+      workspace_name: 'Studio Horizonte',
+      trainer_name: 'André Lima',
+    }
+    await expect(acceptWorkspaceInvitation(validCode, boundaryWith([]).boundary)).rejects.toThrow(invitationErrorMessage)
+    await expect(acceptWorkspaceInvitation(validCode, boundaryWith([accepted, accepted]).boundary)).rejects.toThrow(invitationErrorMessage)
+
+    const invitation = {
+      invitation_code: validCode,
+      expires_at: new Date(Date.now() + (72 * 60 * 60 * 1000)).toISOString(),
+      invited_email_normalized: 'aluna@example.com',
+    }
+    await expect(createWorkspaceInvitation('aluna@example.com', boundaryWith([invitation, invitation]).boundary))
+      .rejects.toThrow(invitationCreationErrorMessage)
+  })
 })

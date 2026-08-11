@@ -1,3 +1,5 @@
+import { parseIsoTimestamp } from '../../lib/iso-timestamp'
+import { hasUnsafeDisplayCharacters } from '../../lib/safe-text'
 import { requireSupabase } from '../../lib/supabase'
 import type { Page } from '../../types'
 import { notificationKinds, type NotificationItem, type NotificationKind } from './types'
@@ -36,7 +38,7 @@ function record(value: unknown): value is Record<string, unknown> {
 
 function stringField(row: Record<string, unknown>, key: string, maximum: number) {
   const value = row[key]
-  if (typeof value !== 'string' || value.length < 1 || value.length > maximum || value !== value.trim() || /[\u0000-\u001f\u007f-\u009f]/.test(value)) throw new NotificationDomainError()
+  if (typeof value !== 'string' || value.length < 1 || value.length > maximum || value !== value.trim() || hasUnsafeDisplayCharacters(value)) throw new NotificationDomainError()
   return value
 }
 
@@ -45,14 +47,15 @@ function parseItem(value: unknown): NotificationItem {
   const itemKey = stringField(value, 'item_key', 160)
   const kind = stringField(value, 'kind', 40)
   const occurredAt = stringField(value, 'occurred_at', 50)
+  const occurredAtMilliseconds = parseIsoTimestamp(occurredAt)
   const targetPage = stringField(value, 'target_page', 40)
   const studentUserId = value.student_user_id
   if (
     !itemKeyPattern.test(itemKey)
     || !kindSet.has(kind)
     || !targetPages.has(targetPage as Page)
-    || !Number.isFinite(Date.parse(occurredAt))
-    || Date.parse(occurredAt) > Date.now() + (5 * 60 * 1000)
+    || occurredAtMilliseconds === null
+    || occurredAtMilliseconds > Date.now() + (5 * 60 * 1000)
     || (studentUserId !== null && (typeof studentUserId !== 'string' || !uuidPattern.test(studentUserId)))
     || typeof value.is_read !== 'boolean'
     || !Number.isInteger(value.priority)

@@ -40,6 +40,7 @@ vi.mock('../onboarding/trainer-verification-service', async (importOriginal) => 
 const firstTrainerId = '11111111-1111-4111-8111-111111111111'
 const secondTrainerId = '22222222-2222-4222-8222-222222222222'
 const workspaceId = '33333333-3333-4333-8333-333333333333'
+const secondWorkspaceId = '44444444-4444-4444-8444-444444444444'
 
 const firstSession = { user: { id: firstTrainerId } } as Session
 const secondSession = { user: { id: secondTrainerId } } as Session
@@ -100,6 +101,7 @@ function AuthSnapshot() {
       <output data-testid="access-user">{auth.professionalAccess?.userId ?? 'none'}</output>
       <output data-testid="access-mode">{auth.professionalAccess?.mode ?? 'none'}</output>
       <output data-testid="access-error">{auth.accessError ?? 'none'}</output>
+      <output data-testid="membership-workspace">{auth.membership?.workspaceId ?? 'none'}</output>
     </>
   )
 }
@@ -160,6 +162,50 @@ afterEach(() => {
 })
 
 describe('professional access request races', () => {
+  it('discards a membership refresh that resolves after the authenticated identity changes', async () => {
+    const staleRefresh = deferred<{ data: unknown; error: null }>()
+    mocks.rpc
+      .mockResolvedValueOnce({ data: [{
+        workspace_id: workspaceId,
+        workspace_name: 'Studio Horizonte',
+        membership_role: 'owner',
+        trainer_name: 'André Lima',
+      }], error: null })
+      .mockReturnValueOnce(staleRefresh.promise)
+      .mockResolvedValueOnce({ data: [{
+        workspace_id: secondWorkspaceId,
+        workspace_name: 'Studio Norte',
+        membership_role: 'owner',
+        trainer_name: 'Bianca Souza',
+      }], error: null })
+    mocks.getProfessionalAccess.mockImplementation(async (activeWorkspaceId: string, userId: string) => ({
+      ...verifiedAccess(userId),
+      workspaceId: activeWorkspaceId,
+    }))
+
+    render(<AuthProvider><AuthSnapshot /></AuthProvider>)
+    await flushMicrotasks()
+
+    let oldRefreshPromise!: Promise<ReturnType<typeof useAuth>['membership']>
+    act(() => { oldRefreshPromise = observedAuth!.refreshMembership() })
+    await flushMicrotasks()
+
+    await dispatchAuthChange('SIGNED_IN', secondSession)
+    expect(screen.getByTestId('session-user')).toHaveTextContent(secondTrainerId)
+    expect(screen.getByTestId('membership-workspace')).toHaveTextContent(secondWorkspaceId)
+
+    staleRefresh.resolve({ data: [{
+      workspace_id: workspaceId,
+      workspace_name: 'Studio Horizonte',
+      membership_role: 'owner',
+      trainer_name: 'André Lima',
+    }], error: null })
+    await act(async () => { await oldRefreshPromise })
+
+    expect(screen.getByTestId('session-user')).toHaveTextContent(secondTrainerId)
+    expect(screen.getByTestId('membership-workspace')).toHaveTextContent(secondWorkspaceId)
+  })
+
   it('ignores a stale refresh failure after sign-out and lets the next identity finish loading', async () => {
     const staleRefresh = deferred<ProfessionalAccess>()
     const secondIdentityLoad = deferred<ProfessionalAccess>()

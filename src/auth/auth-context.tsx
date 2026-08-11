@@ -22,6 +22,11 @@ export type ActiveMembership = {
   trainerName: string
 }
 
+export type MembershipPayload =
+  | { status: 'none'; membership: null }
+  | { status: 'valid'; membership: ActiveMembership }
+  | { status: 'invalid'; membership: null }
+
 export type SignUpInput = {
   role: Role
   displayName: string
@@ -40,7 +45,6 @@ type AuthContextValue = {
   profile: AuthProfile | null
   membership: ActiveMembership | null
   professionalAccess: ProfessionalAccess | null
-  isDemo: boolean
   recoveryMode: boolean
   accessError: string | null
   signIn: (email: string, password: string) => Promise<void>
@@ -51,8 +55,6 @@ type AuthContextValue = {
   refreshMembership: () => Promise<ActiveMembership | null>
   refreshProfessionalAccess: () => Promise<ProfessionalAccess | null>
   signOut: () => Promise<void>
-  enterDemo: () => void
-  leaveDemo: () => void
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null)
@@ -76,9 +78,8 @@ export function normalizeProfile(row: unknown, expectedId: string): AuthProfile 
   return { id: candidate.id, accountRole: candidate.account_role, displayName }
 }
 
-export function normalizeMembership(data: unknown): ActiveMembership | null {
-  const row = Array.isArray(data) ? data[0] : data
-  if (!row || typeof row !== 'object') return null
+function normalizeMembershipRow(row: unknown): ActiveMembership | null {
+  if (!row || typeof row !== 'object' || Array.isArray(row)) return null
   const candidate = row as Record<string, unknown>
   if (!isCanonicalUuid(candidate.workspace_id)) return null
   const workspaceName = boundedText(candidate.workspace_name)
@@ -93,6 +94,21 @@ export function normalizeMembership(data: unknown): ActiveMembership | null {
   }
 }
 
+export function parseMembershipPayload(data: unknown): MembershipPayload {
+  const rows = Array.isArray(data) ? data : data === null ? [] : [data]
+  if (rows.length === 0) return { status: 'none', membership: null }
+  if (rows.length !== 1) return { status: 'invalid', membership: null }
+  const membership = normalizeMembershipRow(rows[0])
+  return membership
+    ? { status: 'valid', membership }
+    : { status: 'invalid', membership: null }
+}
+
+export function normalizeMembership(data: unknown): ActiveMembership | null {
+  const payload = parseMembershipPayload(data)
+  return payload.status === 'valid' ? payload.membership : null
+}
+
 function homeFor(role: Role) {
   return role === 'trainer' ? 'dashboard' : 'today'
 }
@@ -101,9 +117,17 @@ function professionalScope(userId: string, workspaceId: string) {
   return `${userId}:${workspaceId}`
 }
 
+function removeLegacyAccessParameters() {
+  const url = new URL(window.location.href)
+  const hadLegacyParameter = url.searchParams.has('demo') || url.searchParams.has('role')
+  if (!hadLegacyParameter) return
+  url.searchParams.delete('demo')
+  url.searchParams.delete('role')
+  window.history.replaceState(null, '', `${url.pathname}${url.search}${url.hash}`)
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [isDemo, setIsDemo] = useState(() => new URLSearchParams(window.location.search).get('demo') === '1')
-  const [loading, setLoading] = useState(() => !isDemo && publicSupabaseConfig.configured)
+  const [loading, setLoading] = useState(() => publicSupabaseConfig.configured)
   const [session, setSession] = useState<Session | null>(null)
   const [profile, setProfile] = useState<AuthProfile | null>(null)
   const [membership, setMembership] = useState<ActiveMembership | null>(null)
@@ -148,10 +172,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const { data: membershipData, error: membershipError } = await supabase.rpc('get_my_active_membership')
     if (version !== authRequestVersion.current || activeAuthUserId.current !== nextSession.user.id) return
-    const nextMembership = membershipError ? null : normalizeMembership(membershipData)
+    const membershipPayload = membershipError
+      ? { status: 'invalid' as const, membership: null }
+      : parseMembershipPayload(membershipData)
+    const nextMembership = membershipPayload.membership
     const hasExpectedMembership = nextProfile.accountRole === 'student'
-      ? !nextMembership || nextMembership.membershipRole === 'student'
-      : Boolean(nextMembership && ['owner', 'trainer'].includes(nextMembership.membershipRole))
+      ? membershipPayload.status === 'none' || nextMembership?.membershipRole === 'student'
+      : membershipPayload.status === 'valid' && ['owner', 'trainer'].includes(membershipPayload.membership.membershipRole)
     if (membershipError || !hasExpectedMembership) {
       setSession(null)
       setProfile(null)
@@ -219,8 +246,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   useEffect(() => {
+    removeLegacyAccessParameters()
     const client = supabase
-    if (isDemo || !client) {
+    if (!client) {
       authRequestVersion.current += 1
       professionalAccessRequestVersion.current += 1
       activeAuthUserId.current = null
@@ -281,7 +309,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       activeProfessionalScope.current = null
       listener.subscription.unsubscribe()
     }
-  }, [isDemo, loadAuthoritativeProfile])
+  }, [loadAuthoritativeProfile])
 
   const ensureClient = useCallback(() => {
     if (!supabase) throw new Error(unavailableMessage)
@@ -353,12 +381,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const refreshMembership = useCallback(async () => {
     if (!supabase || !session || !profile) return null
-    const { data, error } = await supabase.rpc('get_my_active_membership')
+    const expectedUserId = session.user.id
+    if (profile.id !== expectedUserId || activeAuthUserId.current !== expectedUserId) return null
+    const version = authRequestVersion.current
+    let result: Awaited<ReturnType<typeof supabase.rpc>>
+    try {
+      result = await supabase.rpc('get_my_active_membership')
+    } catch {
+      if (version !== authRequestVersion.current || activeAuthUserId.current !== expectedUserId) return null
+      throw new Error('Não foi possível atualizar o vínculo desta conta.')
+    }
+    if (version !== authRequestVersion.current || activeAuthUserId.current !== expectedUserId) return null
+    const { data, error } = result
     if (error) throw new Error('Não foi possível atualizar o vínculo desta conta.')
-    const nextMembership = normalizeMembership(data)
+    const membershipPayload = parseMembershipPayload(data)
+    const nextMembership = membershipPayload.membership
     const hasExpectedMembership = profile.accountRole === 'student'
-      ? !nextMembership || nextMembership.membershipRole === 'student'
-      : Boolean(nextMembership && ['owner', 'trainer'].includes(nextMembership.membershipRole))
+      ? membershipPayload.status === 'none' || nextMembership?.membershipRole === 'student'
+      : membershipPayload.status === 'valid' && ['owner', 'trainer'].includes(membershipPayload.membership.membershipRole)
     if (!hasExpectedMembership) throw new Error('Não foi possível atualizar o vínculo desta conta.')
     setMembership(nextMembership)
     return nextMembership
@@ -439,25 +479,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     window.history.replaceState(null, '', '#/entrar')
   }, [])
 
-  const enterDemo = useCallback(() => {
-    const url = new URL(window.location.href)
-    url.searchParams.set('demo', '1')
-    url.searchParams.delete('role')
-    url.hash = '/dashboard'
-    window.history.replaceState(null, '', `${url.pathname}${url.search}${url.hash}`)
-    setAccessError(null)
-    setIsDemo(true)
-  }, [])
-
-  const leaveDemo = useCallback(() => {
-    const url = new URL(window.location.href)
-    url.searchParams.delete('demo')
-    url.searchParams.delete('role')
-    url.hash = '/entrar'
-    window.history.replaceState(null, '', `${url.pathname}${url.search}${url.hash}`)
-    setIsDemo(false)
-  }, [])
-
   const value = useMemo<AuthContextValue>(() => ({
     configured: publicSupabaseConfig.configured,
     configurationIssue: publicSupabaseConfig.issue,
@@ -466,7 +487,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     profile,
     membership,
     professionalAccess,
-    isDemo,
     recoveryMode,
     accessError,
     signIn,
@@ -477,9 +497,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     refreshMembership,
     refreshProfessionalAccess,
     signOut,
-    enterDemo,
-    leaveDemo,
-  }), [accessError, isDemo, loading, membership, professionalAccess, profile, recoveryMode, requestPasswordReset, resendConfirmation, refreshMembership, refreshProfessionalAccess, session, signIn, signOut, signUp, updatePassword, enterDemo, leaveDemo])
+  }), [accessError, loading, membership, professionalAccess, profile, recoveryMode, requestPasswordReset, resendConfirmation, refreshMembership, refreshProfessionalAccess, session, signIn, signOut, signUp, updatePassword])
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }
