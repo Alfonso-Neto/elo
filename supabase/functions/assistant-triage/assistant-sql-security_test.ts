@@ -29,7 +29,8 @@ Deno.test("static SQL: run lifecycle requires executor attestation", async () =>
   );
   assert(
     edge.includes('env("AI_EXECUTOR_SECRET")') &&
-      !edge.includes("SUPABASE_SERVICE_ROLE_KEY"),
+      !edge.includes("SUPABASE_SERVICE_ROLE_KEY") &&
+      !edge.includes("SUPABASE_ANON_KEY"),
     "Edge execution must attest without broad service-role authority",
   );
 });

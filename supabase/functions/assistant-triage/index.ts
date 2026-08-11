@@ -1,4 +1,5 @@
 import { createClient } from "npm:@supabase/supabase-js@2.112.2";
+import { readSupabasePublishableKey } from "./supabase-key.ts";
 import {
   createSafetyIdentifier,
   saltedSha256Hex,
@@ -261,19 +262,22 @@ async function handleRequest(
   }
 
   const supabaseUrl = env("SUPABASE_URL");
-  const supabaseAnonKey = env("SUPABASE_ANON_KEY");
+  const supabasePublishableKey = readSupabasePublishableKey((name) =>
+    Deno.env.get(name)
+  );
   const safetySalt = env("SAFETY_ID_SALT");
   const executorSecret = env("AI_EXECUTOR_SECRET");
   const apiKey = env("OPENAI_API_KEY");
   if (
-    !supabaseUrl || !supabaseAnonKey || !apiKey || safetySalt.length < 32 ||
+    !supabaseUrl || !supabasePublishableKey || !apiKey ||
+    safetySalt.length < 32 ||
     !/^[0-9a-f]{64}$/.test(executorSecret)
   ) {
     logFailure(requestId, "server_configuration", 503);
     return errorResponse(503, "unavailable", requestId, cors.headers);
   }
 
-  const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+  const supabase = createClient(supabaseUrl, supabasePublishableKey, {
     global: { headers: { Authorization: authorization } },
     auth: {
       autoRefreshToken: false,

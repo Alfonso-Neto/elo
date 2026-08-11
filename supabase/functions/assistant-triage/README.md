@@ -5,6 +5,9 @@ No produto Elo, esta função medeia dois fluxos: a triagem estruturada do relat
 The function deliberately uses the caller's JWT for RLS and membership checks.
 It does **not** use `service_role`. Run lifecycle RPCs additionally require a
 server-only executor secret, so a browser cannot forge a model completion.
+The Supabase client uses the hosted `SUPABASE_PUBLISHABLE_KEYS.default` value
+(or the documented singular local-development fallback), never a legacy
+`SUPABASE_ANON_KEY`.
 
 ## Current status
 
