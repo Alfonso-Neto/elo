@@ -37,7 +37,7 @@ deno test --allow-read supabase/functions/assistant-triage
 - Supabase CLI `2.113.0`: projeto Elo Homolog vinculado, 17 migrations em paridade e Edge Function ativa;
 - `db reset` local e `db lint`: aprovados com as 17 migrations;
 - aceite remoto não privilegiado: 18 controles aprovados, incluindo IDs reais do segundo workspace;
-- E2E hospedado na homologação: 7 cenários aprovados, incluindo abertura das áreas funcionais, 390/768 px, teclado e redução de movimento;
+- E2E hospedado na homologação: 9 cenários aprovados, incluindo abertura das 14 áreas em 390/768/1280 px, teclado, restauração de foco e redução de movimento;
 - chaves legadas `anon/service_role`: desativadas após migração e smoke test com `sb_publishable_*`.
 
 Não interprete esses resultados como aceite de produção. A interface está publicada por HTTPS em `https://elo-homolog.vercel.app`. A Site URL e a allowlist de redirect do Supabase Auth foram aplicadas para essa origem; `ALLOWED_ORIGINS` da Edge Function também foi atualizado, com preflight `204` e chamada autenticada alcançando a função e recebendo erro de validação controlado. Monitoramento/alertas, entrega e abertura do e-mail de recuperação, rollback operacional e responsáveis humanos ainda são gates abertos. Os professores sintéticos usam concessões temporárias de homologação; nenhum CREF foi aprovado para viabilizar o teste.

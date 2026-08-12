@@ -75,7 +75,7 @@ O frontend está publicado por HTTPS na Vercel e o backend usa um projeto Supaba
 
 - 303 testes web e 21 testes Deno aprovados no candidato registrado;
 - 18 controles remotos de identidade/RLS/isolamento aprovados com dois workspaces sintéticos;
-- 7 cenários E2E hospedados de professor e aluno, incluindo abertura das funcionalidades, 390 e 768 px, teclado e redução de movimento;
+- 9 cenários E2E hospedados de professor e aluno, incluindo abertura das 14 áreas em 390, 768 e 1280 px, teclado, restauração de foco e redução de movimento;
 - chaves legadas `anon`/`service_role` desativadas no ambiente de homologação.
 
 O Supabase Auth está configurado com a Site URL e a allowlist de redirect da Vercel. A Edge Function também autoriza essa origem: o preflight e uma chamada autenticada alcançaram a função. Os dois professores sintéticos têm acesso temporário de homologação; nenhum CREF foi marcado como verificado.
