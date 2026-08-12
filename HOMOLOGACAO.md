@@ -40,7 +40,7 @@ deno test --allow-read supabase/functions/assistant-triage
 - E2E conectado à homologação: 5 cenários aprovados em 390/768 px, teclado e redução de movimento;
 - chaves legadas `anon/service_role`: desativadas após migração e smoke test com `sb_publishable_*`.
 
-Não interprete esses resultados como aceite de produção. Hospedagem HTTPS pública, monitoramento/alertas, e-mail de confirmação e recuperação, rollback operacional e responsáveis humanos ainda são gates abertos.
+Não interprete esses resultados como aceite de produção. A interface de homologação está publicada por HTTPS em `https://elo-homolog.vercel.app` e a matriz autenticada hospedada passou com professor e aluno. A autorização dessa origem no Supabase Auth e no secret `ALLOWED_ORIGINS` da Edge Function, além de monitoramento/alertas, e-mail de confirmação e recuperação, rollback operacional e responsáveis humanos, ainda são gates abertos.
 
 ## 3. Preparar o Supabase
 

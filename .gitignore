@@ -12,6 +12,7 @@ supabase/.temp/
 playwright-report/
 test-results/
 .ultron/
+.vercel/
 
 # Local visual references; they are not part of the authenticated web runtime.
 elo-*.png

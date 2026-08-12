@@ -56,7 +56,7 @@ O Assistente ajuda a organizar o relato e encaminhá-lo ao professor. Ele não d
 
 O MVP técnico está implementado e versionado neste repositório. A aplicação web, os contratos de fonte e SQL e a Edge Function passam pelas verificações locais do projeto. Um ambiente Supabase exclusivo de homologação recebeu as migrations e a função, e o aceite com dois pares sintéticos comprovou autenticação, RLS e negação entre workspaces.
 
-Isso ainda não significa disponibilidade pública ou prontidão para produção. Hospedagem HTTPS pública, monitoramento e alertas operacionais, entrega e recuperação de e-mail e o processo humano de verificação profissional ainda precisam ser exercitados antes de uma coorte. O processo seguro está em [HOMOLOGACAO.md](./HOMOLOGACAO.md).
+A homologação web está publicada por HTTPS em [elo-homolog.vercel.app](https://elo-homolog.vercel.app) e o fluxo autenticado hospedado passou pela matriz E2E de professor e aluno. Isso ainda não significa prontidão para produção: a origem pública precisa ser autorizada no Supabase Auth e na Edge Function, e monitoramento, alertas, entrega/recuperação de e-mail e o processo humano de verificação profissional ainda precisam ser exercitados antes de uma coorte. O processo seguro está em [HOMOLOGACAO.md](./HOMOLOGACAO.md).
 
 ## Arquitetura em resumo
 

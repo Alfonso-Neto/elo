@@ -1,0 +1,13 @@
+.env
+.env.*
+.git
+.github
+.ultron
+node_modules
+dist
+playwright-report
+test-results
+supabase/.branches
+supabase/.temp
+elo-*.png
+elo-prototipo*.html

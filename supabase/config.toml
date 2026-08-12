@@ -16,8 +16,12 @@ port = 54323
 
 [auth]
 enabled = true
-site_url = "http://localhost:5173"
-additional_redirect_urls = ["http://localhost:5173/**", "http://localhost:4173/**"]
+site_url = "https://elo-homolog.vercel.app"
+additional_redirect_urls = [
+  "https://elo-homolog.vercel.app/**",
+  "http://localhost:5173/**",
+  "http://localhost:4173/**"
+]
 enable_signup = true
 
 [auth.email]
