@@ -142,6 +142,27 @@ test('trainer can open and dismiss the main read-only drawers with restored focu
   await expect(page.getByRole('dialog')).toBeVisible()
   await page.keyboard.press('Escape')
   await expect(openSlot).toBeFocused()
+
+  await navigation.getByRole('button', { name: 'Treinos', exact: true }).click()
+  const copilot = page.getByRole('button', { name: /revisar com o Copiloto/i })
+  await expect(copilot).toBeVisible()
+  await copilot.click()
+  const copilotDialog = page.getByRole('dialog', { name: /Segundo olhar no rascunho/i })
+  await expect(copilotDialog).toBeVisible()
+  const eyebrow = copilotDialog.locator('.builder-copilot-intro > .eyebrow')
+  await expect(eyebrow).toHaveText(/REVISÃO SOB DEMANDA/i)
+  const eyebrowBox = await eyebrow.boundingBox()
+  expect(eyebrowBox).not.toBeNull()
+  expect(eyebrowBox!.width).toBeGreaterThan(110)
+  expect(eyebrowBox!.height).toBeLessThan(32)
+  await page.keyboard.press('Escape')
+
+  await page.setViewportSize({ width: 390, height: 844 })
+  await copilot.click()
+  const mobileDrawerBox = await page.locator('.modal-backdrop > .drawer').boundingBox()
+  expect(mobileDrawerBox).not.toBeNull()
+  expect(mobileDrawerBox!.height).toBeLessThan(740)
+  await page.keyboard.press('Escape')
 })
 
 test('mobile overflow navigation exposes every secondary destination', async ({ page }) => {

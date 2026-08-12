@@ -31,5 +31,11 @@ if (/role-switch|reset-button|mobile-more-backdrop/.test(css)) {
 for (const token of ['--disp:"Segoe UI Variable Display"', '--body:"Segoe UI Variable Text"', '--mono:var(--body)']) {
   if (!css.includes(token)) throw new Error(`Missing Elo typography token: ${token}`)
 }
+for (const token of ['--motion-fast:', '--motion-base:', '--motion-slow:']) {
+  if (!css.includes(token)) throw new Error(`Missing Elo motion token: ${token}`)
+}
+if (css.includes('.builder-copilot-intro>span{')) {
+  throw new Error('Copilot icon styles must not collapse textual spans.')
+}
 
 console.log(`Stylesheet contract verified across ${files.length} files.`)
