@@ -100,16 +100,21 @@ function Sidebar() {
         {professionalAccess?.mode === 'verified' ? <BadgeCheck size={10} /> : <Clock3 size={10} />}{professionalLabel}
       </b>}
     </div>
-    <nav aria-label="Navegação principal">{nav.map(({ page: target, label, icon: Icon }) => <button type="button"
-      key={target}
-      className={page === target || (target === 'students' && page === 'student-detail') || (target === 'forms' && page === 'form-builder') ? 'nav-item active' : 'nav-item'}
-      onMouseEnter={() => { if (target !== 'more') preloadPage(target) }}
-      onFocus={() => { if (target !== 'more') preloadPage(target) }}
-      onClick={() => { if (target !== 'more') navigate(target) }}
-      aria-label={label}
-      title={label}
-      aria-current={page === target ? 'page' : undefined}
-    ><Icon size={19} strokeWidth={1.8} /><span>{label}</span></button>)}</nav>
+    <nav aria-label="Navegação principal">{nav.map(({ page: target, label, icon: Icon }) => {
+      const active = page === target
+        || (target === 'students' && page === 'student-detail')
+        || (target === 'forms' && page === 'form-builder')
+      return <button type="button"
+        key={target}
+        className={active ? 'nav-item active' : 'nav-item'}
+        onMouseEnter={() => { if (target !== 'more') preloadPage(target) }}
+        onFocus={() => { if (target !== 'more') preloadPage(target) }}
+        onClick={() => { if (target !== 'more') navigate(target) }}
+        aria-label={label}
+        title={label}
+        aria-current={active ? 'page' : undefined}
+      ><Icon size={19} strokeWidth={1.8} /><span>{label}</span></button>
+    })}</nav>
     <div className="sidebar-bottom">
       <button type="button" className="account-action" onClick={() => void signOut()}><LogOut size={15} /> Sair da conta</button>
       <div className="sidebar-profile"><span className="avatar">{initials}</span><div><strong>{displayName}</strong><small>{role === 'trainer' ? professionalAccess?.mode === 'verified' ? 'Professor · CREF verificado' : 'Professor · homologação temporária' : 'Aluno · conta ativa'}</small></div><MoreHorizontal size={17} /></div>

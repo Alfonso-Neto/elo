@@ -57,7 +57,7 @@ function ModalHarness({ close = vi.fn() }: { close?: () => void }) {
   return <>
     <button type="button" onClick={() => setOpen(true)}>Abrir diálogo</button>
     {open && <Modal title="Revisar informação" onClose={() => { close(); setOpen(false) }}>
-      <label>Nome <input /></label>
+      <label>Nome <input autoFocus /></label>
       <button type="button">Última ação</button>
     </Modal>}
   </>

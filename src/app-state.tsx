@@ -213,7 +213,7 @@ export function EloAppProvider({ children, lockedRole }: { children: ReactNode; 
     setPage(target)
     window.history.pushState(null, '', '#/' + target)
     document.getElementById('main-content')?.focus()
-    window.scrollTo({ top: 0, behavior: 'smooth' })
+    window.scrollTo({ top: 0, behavior: 'auto' })
   }, [lockedRole])
   const openExercisePainReport = useCallback((movement: string) => {
     const cleanMovement = movement.replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 120)

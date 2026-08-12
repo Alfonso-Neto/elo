@@ -51,3 +51,18 @@ test('prefers-reduced-motion disables public entry animation and transitions', a
   })
   expect(transitionSeconds).toBeLessThanOrEqual(0.001)
 })
+
+test('uses the readable native typography stack with a legible metadata floor', async ({ page }) => {
+  await page.goto('/#/cadastro')
+
+  const typography = await page.evaluate(() => {
+    const root = getComputedStyle(document.documentElement)
+    const visibleMetadata = [...document.querySelectorAll<HTMLElement>('small')]
+      .filter((element) => element.getClientRects().length > 0)
+      .map((element) => Number.parseFloat(getComputedStyle(element).fontSize))
+    return { family: root.fontFamily, minimumMetadataSize: Math.min(...visibleMetadata) }
+  })
+
+  expect(typography.family).toContain('Segoe UI')
+  expect(typography.minimumMetadataSize).toBeGreaterThanOrEqual(10)
+})

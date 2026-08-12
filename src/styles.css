@@ -2,7 +2,9 @@
   --ink:#14201b; --ink-soft:#586a60; --pine:#1b5e43; --pine-deep:#123f2e; --pine-bright:#2bbe86;
   --apricot:#f2764a; --apricot-deep:#d55f34; --apricot-soft:#fde6da; --paper:#eef1ea; --surface:#ffffff;
   --sand:#e6e2d6; --line:#e0e4db; --amber:#e8a23c; --rose:#d8654f;
-  --disp:'Bricolage Grotesque',system-ui,sans-serif; --body:'Inter',system-ui,sans-serif; --mono:'Space Mono',ui-monospace,monospace;
+  --disp:"Segoe UI Variable Display","Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  --body:"Segoe UI Variable Text","Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  --mono:var(--body);
   /* Compatibility aliases for the existing feature layer. */
   --ink-2:#1a2b23; --ink-3:#24382f; --paper-2:var(--sand); --white:var(--surface); --text:var(--ink); --muted:var(--ink-soft);
   --serif:var(--disp); --sans:var(--body); --sage:var(--pine-bright); --sage-dark:var(--pine); --cream:#e7efe9; --ink-faint:var(--ink-soft);

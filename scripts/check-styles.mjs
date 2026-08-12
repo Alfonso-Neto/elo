@@ -28,7 +28,7 @@ if (/Manrope|Roboto Mono/.test(css)) {
 if (/role-switch|reset-button|mobile-more-backdrop/.test(css)) {
   throw new Error('Removed demonstration selectors remain in the stylesheets.')
 }
-for (const token of ["--disp:'Bricolage Grotesque'", "--body:'Inter'", "--mono:'Space Mono'"]) {
+for (const token of ['--disp:"Segoe UI Variable Display"', '--body:"Segoe UI Variable Text"', '--mono:var(--body)']) {
   if (!css.includes(token)) throw new Error(`Missing Elo typography token: ${token}`)
 }
 

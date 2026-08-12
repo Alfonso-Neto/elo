@@ -23,11 +23,11 @@ export function Button({ children, variant = 'primary', className = '', ...props
   return <button type="button" className={`button ${variant} ${className}`} {...props}>{children}</button>
 }
 
-function useDialogBehavior(ref: RefObject<HTMLElement | null>, onClose: () => void) {
+function useDialogBehavior(ref: RefObject<HTMLElement | null>, onClose: () => void, returnFocusRef: RefObject<HTMLElement | null>) {
   const closeRef = useRef(onClose)
   useEffect(() => { closeRef.current = onClose }, [onClose])
   useEffect(() => {
-    const previous = document.activeElement as HTMLElement | null
+    const previous = returnFocusRef.current
     const dialog = ref.current
     if (!dialog) return
     dialogStack.push(dialog)
@@ -71,8 +71,9 @@ function closeFromBackdrop(event: React.MouseEvent<HTMLElement>, onClose: () => 
 
 export function Modal({ title, eyebrow, onClose, children, size = 'medium' }: { title: string; eyebrow?: string; onClose: () => void; children: ReactNode; size?: 'small' | 'medium' | 'large' }) {
   const ref = useRef<HTMLElement>(null)
+  const returnFocusRef = useRef<HTMLElement | null>(document.activeElement as HTMLElement | null)
   const titleId = useId()
-  useDialogBehavior(ref, onClose)
+  useDialogBehavior(ref, onClose, returnFocusRef)
   return <div className="modal-backdrop" onMouseDown={(event) => closeFromBackdrop(event, onClose)}>
     <section ref={ref} className={`modal ${size}`} role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1} onMouseDown={(event) => event.stopPropagation()}>
       <button type="button" className="icon-button modal-close" onClick={onClose} aria-label="Fechar"><X size={19} /></button>
@@ -83,8 +84,9 @@ export function Modal({ title, eyebrow, onClose, children, size = 'medium' }: { 
 
 export function Drawer({ title, eyebrow, onClose, children }: { title: string; eyebrow?: string; onClose: () => void; children: ReactNode }) {
   const ref = useRef<HTMLElement>(null)
+  const returnFocusRef = useRef<HTMLElement | null>(document.activeElement as HTMLElement | null)
   const titleId = useId()
-  useDialogBehavior(ref, onClose)
+  useDialogBehavior(ref, onClose, returnFocusRef)
   return <div className="modal-backdrop" onMouseDown={(event) => closeFromBackdrop(event, onClose)}><aside ref={ref} className="drawer" role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1} onMouseDown={(event) => event.stopPropagation()}>
     <button type="button" className="icon-button modal-close" onClick={onClose} aria-label="Fechar"><X size={19} /></button>
     {eyebrow && <Eyebrow accent>{eyebrow}</Eyebrow>}<h2 id={titleId}>{title}</h2>{children}

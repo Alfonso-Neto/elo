@@ -327,7 +327,7 @@ export function AuthPage() {
   const navigate = (next: AuthRoute) => {
     window.history.pushState(null, '', `#/${next}`)
     setRoute(next)
-    window.scrollTo({ top: 0, behavior: 'smooth' })
+    window.scrollTo({ top: 0, behavior: 'auto' })
   }
   useEffect(() => {
     document.body.classList.add('auth-active')
