@@ -1,8 +1,8 @@
-# Elo — documentação do produto
+# Elo — visão do produto
 
-> Fonte de verdade sobre a proposta, os limites e a direção do Elo. Procedimentos de implantação e aceite ficam em [HOMOLOGACAO.md](./HOMOLOGACAO.md).
+> Fonte de verdade sobre a proposta, os limites e a direção do Elo. Para usar o aplicativo, consulte o [Guia do usuário](./docs/GUIA-USUARIO.md). Arquitetura e procedimentos ficam em [Arquitetura e segurança](./docs/ARQUITETURA.md) e [Homologação](./HOMOLOGACAO.md).
 
-**Status:** MVP técnico implementado localmente; implantação e aceite remoto pendentes.
+**Status:** candidato de piloto implantado em homologação; validação de produto e gates operacionais em andamento.
 
 **Nome:** Elo é o vínculo entre aluno e professor e entre um sinal percebido e uma decisão profissional.
 
@@ -156,23 +156,28 @@ As demonstrações de exercícios são vetoriais e servem como referência visua
 
 ## 9. Estado atual e maturidade
 
-### Implementado localmente
+### Implementado e exercitado
 
 - interface web mobile-first com jornadas de professor e aluno;
 - contratos de autenticação, persistência, RLS/RPC, consentimento e auditoria versionados;
 - Edge Function de triagem e Copiloto com validação de entrada e saída;
-- verificações automatizadas de documentação, fonte, SQL, TypeScript, testes, estilos e build.
+- verificações automatizadas de documentação, fonte, SQL, TypeScript, testes, estilos e build;
+- frontend de homologação publicado por HTTPS na Vercel;
+- 17 migrations e Edge Function aplicadas no Supabase de homologação;
+- Auth configurado para a origem publicada e Edge Function com origem exata autorizada;
+- aceite remoto de isolamento entre dois workspaces sintéticos;
+- matriz E2E hospedada de professor e aluno, incluindo abertura das áreas funcionais, responsividade, teclado e redução de movimento.
 
-### Pendente de aceite
+### Gates ainda abertos
 
-- aplicar o conjunto versionado de migrations em um Supabase exclusivo de homologação;
-- configurar e atestar os segredos da Edge Function;
-- completar o ciclo principal com contas reais de teste;
-- provar o isolamento com um segundo workspace;
-- validar recuperação, conectividade, acessibilidade, responsividade e procedimentos operacionais;
+- validar entrega e abertura do e-mail de recuperação na origem pública;
+- configurar e evidenciar monitoramento, alertas e redação de logs;
+- ensaiar rollback com responsáveis humanos;
+- instituir operação humana de conferência do CREF; as contas atuais usam somente concessões temporárias e nenhum CREF fictício foi aprovado;
+- observar os fluxos com usuários e registrar defeitos, compreensão e valor percebido;
 - concluir revisão jurídica/LGPD antes de usar dados reais.
 
-“Implementado” significa presente no repositório e verificável localmente. Não significa implantado, aceito remotamente ou pronto para produção. A matriz e os critérios operacionais estão em [HOMOLOGACAO.md](./HOMOLOGACAO.md).
+O ambiente publicado continua sendo homologação e não está autorizado para dados reais nem produção. Resultados automatizados pertencem ao commit e à janela em que foram coletados; a matriz e os critérios de renovação da evidência estão em [HOMOLOGACAO.md](./HOMOLOGACAO.md).
 
 ## 10. Hipóteses de produto e negócio
 
@@ -202,12 +207,12 @@ A experiência deve permanecer responsiva, navegável por teclado, compatível c
 
 ## 12. Roadmap orientado a risco
 
-### Agora: provar o ciclo e a fronteira
+### Agora: validar uso e operação
 
-- implantar em ambiente isolado e completar o aceite remoto;
 - validar dor → proposta → decisão → versão → feedback;
-- demonstrar isolamento, consentimento, idempotência e falha fechada;
 - observar professores e alunos usando o ciclo sem mediação artificial.
+- corrigir atritos encontrados ao abrir e operar cada funcionalidade;
+- exercitar e-mail, suporte, monitoramento, CREF e rollback com responsáveis definidos.
 
 ### Depois: validar valor e operação
 

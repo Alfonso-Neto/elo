@@ -45,7 +45,7 @@ O processo falha fechado se faltar variável, a identidade divergir, uma consult
 
 ## Preparação das contas e e-mail
 
-Crie manualmente três contas confirmadas em perfis de navegador separados: professor e aluno do workspace principal, e aluno do workspace estrangeiro. O workspace estrangeiro também exige professor operacional para preparar o slot. Verifique entrega, confirmação, redefinição e invalidação de sessões sem colocar links mágicos ou tokens nas evidências.
+Crie quatro contas confirmadas em perfis de navegador separados: professor e aluno do workspace principal, e professor e aluno do workspace estrangeiro. O segundo professor prepara o vínculo e o slot usados pelas sondas de isolamento. Verifique entrega, confirmação, redefinição e invalidação de sessões sem colocar links mágicos ou tokens nas evidências.
 
 O envio transacional automático de convites e demais e-mails continua **fora do escopo deste piloto**. Para a coorte, a operação entrega o código de convite de uso único por canal aprovado e registra somente o horário, destinatário mascarado e resultado da entrega manual.
 

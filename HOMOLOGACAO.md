@@ -2,7 +2,7 @@
 
 Este é o runbook operacional para validar, em um ambiente separado, as fronteiras centrais do Elo: vínculo entre professor e aluno, consentimento, verificação profissional, isolamento por papel e workspace, ciclo dor → proposta → decisão → publicação, idempotência e falha fechada.
 
-Para entender a proposta antes de executar o aceite, leia a [visão geral](./README.md) e a [documentação do produto](./elo-documentacao.md). Este roteiro não autoriza aplicar migrations em produção nem usar dados reais de saúde antes da revisão jurídica/LGPD.
+Para entender a proposta antes de executar o aceite, leia a [visão geral](./README.md), a [visão do produto](./elo-documentacao.md) e a [arquitetura](./docs/ARQUITETURA.md). Este roteiro não autoriza aplicar migrations em produção nem usar dados reais de saúde antes da revisão jurídica/LGPD.
 
 ## 1. O que precisa existir
 
@@ -12,7 +12,7 @@ Para entender a proposta antes de executar o aceite, leia a [visão geral](./REA
 - Supabase CLI instalada e autenticada, ou acesso equivalente pelo painel.
 - Hospedagem HTTPS para o frontend.
 - Um projeto OpenAI separado para a Edge Function.
-- Dois e-mails de teste: um para professor e outro para aluno.
+- Quatro contas/e-mails sintéticos quando o aceite incluir isolamento: um par professor/aluno no workspace principal e outro no workspace estrangeiro.
 
 Use dados fictícios ou sintéticos durante o aceite técnico. Não reutilize chaves, banco ou usuários de produção.
 
@@ -37,10 +37,10 @@ deno test --allow-read supabase/functions/assistant-triage
 - Supabase CLI `2.113.0`: projeto Elo Homolog vinculado, 17 migrations em paridade e Edge Function ativa;
 - `db reset` local e `db lint`: aprovados com as 17 migrations;
 - aceite remoto não privilegiado: 18 controles aprovados, incluindo IDs reais do segundo workspace;
-- E2E conectado à homologação: 5 cenários aprovados em 390/768 px, teclado e redução de movimento;
+- E2E hospedado na homologação: 7 cenários aprovados, incluindo abertura das áreas funcionais, 390/768 px, teclado e redução de movimento;
 - chaves legadas `anon/service_role`: desativadas após migração e smoke test com `sb_publishable_*`.
 
-Não interprete esses resultados como aceite de produção. A interface de homologação está publicada por HTTPS em `https://elo-homolog.vercel.app` e a matriz autenticada hospedada passou com professor e aluno. A autorização dessa origem no Supabase Auth e no secret `ALLOWED_ORIGINS` da Edge Function, além de monitoramento/alertas, e-mail de confirmação e recuperação, rollback operacional e responsáveis humanos, ainda são gates abertos.
+Não interprete esses resultados como aceite de produção. A interface está publicada por HTTPS em `https://elo-homolog.vercel.app`. A Site URL e a allowlist de redirect do Supabase Auth foram aplicadas para essa origem; `ALLOWED_ORIGINS` da Edge Function também foi atualizado, com preflight `204` e chamada autenticada alcançando a função e recebendo erro de validação controlado. Monitoramento/alertas, entrega e abertura do e-mail de recuperação, rollback operacional e responsáveis humanos ainda são gates abertos. Os professores sintéticos usam concessões temporárias de homologação; nenhum CREF foi aprovado para viabilizar o teste.
 
 ## 3. Preparar o Supabase
 

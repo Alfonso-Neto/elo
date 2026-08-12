@@ -1,4 +1,4 @@
-# Assistant triage deployment
+# Edge Function `assistant-triage`
 
 No produto Elo, esta função medeia dois fluxos: a triagem estruturada do relato de dor do aluno e as propostas do Copiloto para o professor. Ela organiza contexto e produz propostas para revisão humana; nunca diagnostica nem altera ou publica treino, prescrição ou decisão profissional. A função persiste os registros de execução e proposta necessários ao ciclo de auditoria; a decisão é registrada separadamente por um usuário autorizado.
 
@@ -9,15 +9,16 @@ The Supabase client uses the hosted `SUPABASE_PUBLISHABLE_KEYS.default` value
 (or the documented singular local-development fallback), never a legacy
 `SUPABASE_ANON_KEY`.
 
-## Current status
+## Estado atual
 
-The function, shared validators, SQL lifecycle and Deno tests are versioned in
-this repository. The function has been deployed and authenticated smoke-tested
-in the dedicated Elo homologation project with a publishable key and caller
-JWT. This evidence does not authorize production or replace provider, CORS,
-cross-workspace and lifecycle acceptance for each released commit.
+A função, os validadores compartilhados, o ciclo SQL e os testes Deno estão
+versionados neste repositório. A função foi implantada no projeto Elo de
+homologação. A origem Vercel está em `ALLOWED_ORIGINS`: o preflight respondeu
+`204` e uma chamada autenticada chegou ao contrato da função, retornando erro
+de validação controlado para a sonda inválida. Isso não autoriza produção nem
+substitui o aceite do provedor, isolamento e ciclo de vida em cada release.
 
-## Required secrets
+## Secrets necessários
 
 Configure these only in the Supabase Edge secret store:
 
@@ -32,7 +33,7 @@ Never put these values in `VITE_*`, repository files, SQL migrations, logs, or
 client requests. `AI_EXECUTOR_SECRET` and `SAFETY_ID_SALT` must be independent
 values.
 
-## One-time database attestation configuration
+## Atestação do executor no banco
 
 1. Generate `AI_EXECUTOR_SECRET` in a secret manager/CSPRNG.
 2. Hash the **decoded 32 secret bytes** with SHA-256 outside PostgreSQL.
@@ -51,7 +52,7 @@ The placeholder is the hash, not the Edge secret. The function fails closed
 until the database hash and Edge secret match. Rotate both immediately if the
 raw secret could have reached logs or a client.
 
-## Homologation access
+## Acesso de homologação
 
 Verified trainers are allowed automatically. An unverified trainer requires a
 new, time-bounded full-professional-access grant inserted by an administrator.
@@ -97,7 +98,7 @@ insert into private.temporary_professional_access_revocations (
 Students may request pain triage only for their own authoritative pain report
 and still need current health consent.
 
-## Client contract
+## Contrato do cliente
 
 Every `POST` requires `Content-Type: application/json`, a user bearer token, and
 an `Idempotency-Key` of 16–128 allowlisted ASCII characters. Reuse the same key
@@ -127,7 +128,7 @@ model request, and validates the provider's structured response before storing
 it. A stored proposal is still inert until an authorized user records a
 decision through the audited RPC.
 
-## Deployment order
+## Ordem de implantação
 
 1. Apply the matching migrations to the intended homologation project.
 2. Configure and attest `AI_EXECUTOR_SECRET` as described above.
@@ -139,7 +140,7 @@ decision through the audited RPC.
 7. Test an invalid origin, another workspace, expired consent, an unverified
    trainer and an executor-secret mismatch; each must fail closed.
 
-## Verification
+## Verificação
 
 Run in an environment with Deno and a disposable Supabase database:
 

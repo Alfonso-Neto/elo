@@ -1,75 +1,111 @@
 # Elo
 
-**Decisões profissionais melhores começam com sinais que não se perdem.**
+**Acompanhamento contínuo entre personal trainer e aluno, com contexto, consentimento e decisão humana.**
 
-Elo é uma aplicação web mobile-first que aproxima personal trainers e alunos em um ciclo contínuo de acompanhamento. O aluno registra como está, o sistema organiza os sinais relevantes e o professor usa esse contexto para decidir, prescrever e acompanhar — sempre com responsabilidade humana.
+Elo é uma aplicação web mobile-first para organizar o que acontece entre os treinos. Relatos de dor, execução, esforço percebido, agenda, anamneses e conversas deixam de ficar dispersos; o professor recebe esse contexto no workspace correto e decide como conduzir o acompanhamento.
 
-O produto nasce de um problema simples: dor, esforço percebido, faltas e feedbacks costumam ficar espalhados entre mensagens, planilhas e memória. Quando esses sinais não chegam no momento certo, a individualização do treino fica mais difícil. Elo transforma esse ruído em um fluxo de trabalho compartilhado, sem transformar inteligência artificial em autoridade clínica ou profissional.
+A inteligência artificial atua como copiloto. Ela pode estruturar um relato e sugerir perguntas ou alternativas, mas não diagnostica, não prescreve, não altera treinos e não publica nada sozinha.
 
-## O ciclo central
+> Homologação pública: [elo-homolog.vercel.app](https://elo-homolog.vercel.app)
+>
+> Estado: candidato de piloto em validação; não aprovado para produção nem para dados reais de saúde.
+
+## O produto
 
 ```text
-Aluno registra dor ou feedback
-          ↓
-Elo estrutura e protege o sinal
-          ↓
-Copiloto propõe perguntas e caminhos
-          ↓
-Professor avalia, edita e decide
-          ↓
-Nova versão do treino é publicada
-          ↓
-Execução e feedback alimentam o próximo ciclo
+Aluno registra execução, feedback ou dor
+                    ↓
+        Elo preserva origem e consentimento
+                    ↓
+     Copiloto produz uma proposta estruturada
+                    ↓
+       Professor revisa, edita e decide
+                    ↓
+       Treino versionado é publicado
+                    ↓
+       Novo feedback alimenta o ciclo
 ```
 
-O Copiloto não é um piloto automático. Suas propostas são inertes: não salvam, alteram ou publicam uma prescrição. O profissional mantém a decisão final, e a publicação acontece em uma etapa separada, versionada e idempotente.
+### Para o professor
 
-## Experiência do professor
+- painel com alunos vinculados e sinais que pedem atenção;
+- perfil longitudinal do aluno, relatos de dor e notas profissionais privadas;
+- criação e publicação versionada de treinos;
+- Copiloto com propostas, incertezas e limites explícitos;
+- criação e atribuição de anamneses;
+- agenda, solicitações e conversa privada;
+- leitura de plano nutricional enviado por parceiro habilitado, condicionada ao consentimento do aluno.
 
-O professor encontra em um único workspace os alunos vinculados, sinais que pedem atenção e o contexto necessário para acompanhar cada pessoa. A experiência inclui:
+### Para o aluno
 
-- painel do dia e histórico por aluno;
-- Copiloto com propostas estruturadas, justificativas, incertezas e limites explícitos;
-- construção e publicação versionada de treinos;
-- anamneses, agenda, conversas e notificações;
-- leitura de nutrição fornecida por parceiro habilitado, quando houver consentimento.
+- visão do dia e acesso ao treino publicado;
+- registro de conclusão, esforço percebido e comentário;
+- relato estruturado de dor com checagem de segurança e consentimento;
+- agenda e solicitação de horários;
+- conversa com o professor e notificações;
+- resposta de anamnese;
+- consulta e acompanhamento de plano nutricional parceiro, com controle do consentimento.
 
-O objetivo não é retirar trabalho intelectual do profissional, mas reduzir a perda de contexto e apoiar decisões mais conscientes.
+## Limites deliberados
 
-## Experiência do aluno
+Elo não substitui avaliação clínica ou julgamento profissional. No escopo atual, o produto não:
 
-O aluno acompanha o treino publicado, consulta orientações de exercício e registra execução, esforço e feedback. Também pode relatar dor por um fluxo estruturado, responder anamneses, conversar com o professor, solicitar horários e acompanhar um plano nutricional disponibilizado por integração autorizada.
+- diagnostica, trata ou recomenda conduta médica;
+- publica ou modifica prescrição automaticamente;
+- permite ao personal trainer prescrever dieta;
+- envia convites transacionais automaticamente;
+- opera pagamentos ou gestão financeira;
+- fornece vídeos de exercícios sem cadeia de licença documentada.
 
-O Assistente ajuda a organizar o relato e encaminhá-lo ao professor. Ele não diagnostica, prescreve, substitui atendimento nem toma decisões sobre o treino.
+## Confiança por arquitetura
 
-## Princípios de confiança
+- **Isolamento no servidor:** RLS e RPCs limitam leitura e mutação ao papel, usuário e workspace autorizados.
+- **Papel imutável:** uma conta é professor ou aluno; a interface não oferece troca local de papel.
+- **Consentimento específico:** saúde e nutrição usam finalidades e eventos de consentimento próprios.
+- **Verificação profissional:** acesso de professor depende de CREF revisado ou de concessão temporária de homologação, explícita e auditável.
+- **IA inerte:** uma proposta só ganha efeito após decisão humana registrada e uma publicação separada.
+- **Falha fechada:** configuração ausente, vínculo inválido ou autorização inconclusiva não libera dados nem funcionalidades.
+- **Segredos fora do cliente:** o navegador recebe apenas a URL do Supabase e uma chave `sb_publishable_*`.
 
-- **Copiloto, não autopilot:** IA oferece contexto e alternativas; o profissional decide.
-- **Consentimento antes do acesso:** sinais de saúde dependem de consentimento vigente e finalidade delimitada.
-- **Isolamento por papel e workspace:** RLS e RPCs impõem as fronteiras no servidor; a interface não é a barreira de segurança.
-- **Falha fechada:** ausência de configuração, autorização ou contexto válido não cria atalhos nem dados simulados.
-- **Rastreabilidade:** relatos relevantes são preservados, decisões são auditáveis e publicações geram versões imutáveis.
-- **Minimização:** somente o contexto necessário é enviado ao provedor de IA.
-- **Verificação profissional real:** acesso profissional requer CREF verificado; uma concessão temporária de homologação é explícita, auditável, limitada e nunca se apresenta como verificação.
+Leia a explicação detalhada em [Arquitetura e segurança](./docs/ARQUITETURA.md).
 
-## Maturidade atual
+## Estado da homologação
 
-O MVP técnico está implementado e versionado neste repositório. A aplicação web, os contratos de fonte e SQL e a Edge Function passam pelas verificações locais do projeto. Um ambiente Supabase exclusivo de homologação recebeu as migrations e a função, e o aceite com dois pares sintéticos comprovou autenticação, RLS e negação entre workspaces.
+O frontend está publicado por HTTPS na Vercel e o backend usa um projeto Supabase exclusivo de homologação. O repositório contém 17 migrations e a Edge Function `assistant-triage`. O aceite já exercitado registrou:
 
-A homologação web está publicada por HTTPS em [elo-homolog.vercel.app](https://elo-homolog.vercel.app) e o fluxo autenticado hospedado passou pela matriz E2E de professor e aluno. Isso ainda não significa prontidão para produção: a origem pública precisa ser autorizada no Supabase Auth e na Edge Function, e monitoramento, alertas, entrega/recuperação de e-mail e o processo humano de verificação profissional ainda precisam ser exercitados antes de uma coorte. O processo seguro está em [HOMOLOGACAO.md](./HOMOLOGACAO.md).
+- 303 testes web e 21 testes Deno aprovados no candidato registrado;
+- 18 controles remotos de identidade/RLS/isolamento aprovados com dois workspaces sintéticos;
+- 7 cenários E2E hospedados de professor e aluno, incluindo abertura das funcionalidades, 390 e 768 px, teclado e redução de movimento;
+- chaves legadas `anon`/`service_role` desativadas no ambiente de homologação.
 
-## Arquitetura em resumo
+O Supabase Auth está configurado com a Site URL e a allowlist de redirect da Vercel. A Edge Function também autoriza essa origem: o preflight e uma chamada autenticada alcançaram a função. Os dois professores sintéticos têm acesso temporário de homologação; nenhum CREF foi marcado como verificado.
 
-| Camada | Papel |
+Esses resultados são evidência de um candidato específico, não uma promessa permanente. Antes de cada apresentação ou coorte, o responsável deve registrar novamente os resultados em [Evidência de liberação](./docs/PILOT-EVIDENCE.md). Entrega e abertura do e-mail de recuperação, monitoramento, alertas, ensaio de rollback e a operação humana do CREF ainda são gates abertos.
+
+## Arquitetura resumida
+
+| Camada | Responsabilidade |
 |---|---|
-| React + TypeScript + Vite | interface web responsiva e navegação por papel |
-| Supabase Auth | identidade, confirmação, recuperação e sessão |
-| Postgres + RLS/RPC | consentimento, isolamento, auditoria, idempotência e regras profissionais |
-| Edge Function `assistant-triage` | mediação do modelo, cotas, contexto minimizado e validação de propostas |
+| React 19 + TypeScript + Vite | experiência responsiva e navegação por papel |
+| Supabase Auth | identidade, sessão, confirmação e recuperação |
+| Postgres + RLS | fonte de verdade, isolamento e leitura autorizada |
+| RPCs `security definer` | mutações validadas, idempotentes e auditáveis |
+| Edge Function `assistant-triage` | autorização, cota, minimização e validação das propostas de IA |
+| Vercel | entrega HTTPS do artefato estático e cabeçalhos de segurança |
 
-O navegador recebe apenas configuração publicável. Segredos operacionais e autoridade privilegiada permanecem fora do frontend.
+## Documentação
 
-## Executar e verificar
+| Documento | Para quem | Conteúdo |
+|---|---|---|
+| [Guia do usuário](./docs/GUIA-USUARIO.md) | professores, alunos e suporte | login, navegação, fluxos, privacidade e solução de problemas |
+| [Visão do produto](./elo-documentacao.md) | produto, design e negócio | problema, proposta de valor, escopo, jornadas e hipóteses |
+| [Arquitetura e segurança](./docs/ARQUITETURA.md) | engenharia e revisão técnica | componentes, domínios, Auth/RLS, IA, dados, testes e deploy |
+| [Homologação](./HOMOLOGACAO.md) | engenharia e release | implantação, configuração e matriz de aceite |
+| [Operação do piloto](./docs/PILOT-OPERATIONS.md) | operações e segurança | CREF, observabilidade, incidentes e rollback |
+| [Evidência de liberação](./docs/PILOT-EVIDENCE.md) | responsável pelo release | checklist assinável sem dados sensíveis |
+| [Edge Function](./supabase/functions/assistant-triage/README.md) | backend/IA | contrato e operação de `assistant-triage` |
+
+## Desenvolvimento
 
 Requer Node.js 22.12 ou superior.
 
@@ -78,25 +114,14 @@ npm install
 npm run dev
 ```
 
-Para executar a verificação local completa:
+Verificação local completa:
 
 ```bash
 npm run verify
 ```
 
-Configuração do ambiente, implantação e matriz de aceite pertencem ao runbook de homologação, não a esta visão do produto.
+Os comandos de banco, deploy e aceite remoto ficam deliberadamente no [runbook de homologação](./HOMOLOGACAO.md), onde seus pré-requisitos e riscos podem ser lidos em contexto.
 
-## Documentação
+## Licença
 
-- [Documentação do produto](./elo-documentacao.md) — identidade, jornadas, escopo, princípios, hipóteses e decisões abertas.
-- [Homologação](./HOMOLOGACAO.md) — preparação do ambiente, implantação, segurança e aceite remoto.
-- [Assistant triage](./supabase/functions/assistant-triage/README.md) — contrato técnico e operação segura da Edge Function.
-
-## Não objetivos atuais
-
-- automatizar a decisão ou a prescrição do professor;
-- diagnosticar, tratar ou substituir atendimento de saúde;
-- permitir que o personal prescreva ou altere plano nutricional;
-- operar pagamentos, cobranças ou gestão financeira;
-- oferecer modo de demonstração, usuários fictícios ou troca local de papel;
-- declarar produção pronta antes da implantação e do aceite remoto.
+Este repositório não declara uma licença de código aberto. Ausência de licença não concede permissão de uso, cópia, modificação ou redistribuição.
