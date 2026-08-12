@@ -45,6 +45,17 @@ async function expectNoHorizontalOverflow(page: Page) {
   ))).toBeLessThanOrEqual(1)
 }
 
+async function expectBackdropCoversViewport(page: Page) {
+  const viewport = page.viewportSize()
+  const box = await page.locator('.modal-backdrop').last().boundingBox()
+  expect(viewport).not.toBeNull()
+  expect(box).not.toBeNull()
+  expect(box!.x).toBe(0)
+  expect(box!.y).toBe(0)
+  expect(box!.width).toBe(viewport!.width)
+  expect(box!.height).toBe(viewport!.height)
+}
+
 const roleExpectations = {
   trainer: { own: /Visão geral|Alunos/i, forbidden: /^Hoje$/i },
   student: { own: /^Hoje$|^Treino$/i, forbidden: /Visão geral/i },
@@ -121,6 +132,7 @@ test('trainer can open and dismiss the main read-only drawers with restored focu
   const invite = page.getByRole('button', { name: /Convidar aluno/i }).first()
   await invite.click()
   await expect(page.getByRole('dialog', { name: /Convide um aluno/i })).toBeVisible()
+  await expectBackdropCoversViewport(page)
   await page.keyboard.press('Escape')
   await expect(invite).toBeFocused()
 
@@ -140,6 +152,7 @@ test('mobile overflow navigation exposes every secondary destination', async ({ 
   await more.click()
   const dialog = page.getByRole('dialog', { name: 'Mais no Elo' })
   await expect(dialog).toBeVisible()
+  await expectBackdropCoversViewport(page)
   for (const label of ['Agenda', 'Conversas', 'Anamnese', 'Sair da conta']) {
     await expect(dialog.getByRole('button', { name: label, exact: true })).toBeVisible()
   }

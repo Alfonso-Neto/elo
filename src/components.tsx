@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, type ReactNode, type RefObject } from 'react'
+import { createPortal } from 'react-dom'
 import { Check, ChevronLeft, Link2, Pause, Play, X } from 'lucide-react'
 
 const dialogStack: HTMLElement[] = []
@@ -74,12 +75,12 @@ export function Modal({ title, eyebrow, onClose, children, size = 'medium' }: { 
   const returnFocusRef = useRef<HTMLElement | null>(document.activeElement as HTMLElement | null)
   const titleId = useId()
   useDialogBehavior(ref, onClose, returnFocusRef)
-  return <div className="modal-backdrop" onMouseDown={(event) => closeFromBackdrop(event, onClose)}>
+  return createPortal(<div className="modal-backdrop" onMouseDown={(event) => closeFromBackdrop(event, onClose)}>
     <section ref={ref} className={`modal ${size}`} role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1} onMouseDown={(event) => event.stopPropagation()}>
       <button type="button" className="icon-button modal-close" onClick={onClose} aria-label="Fechar"><X size={19} /></button>
       {eyebrow && <Eyebrow accent>{eyebrow}</Eyebrow>}<h2 id={titleId}>{title}</h2>{children}
     </section>
-  </div>
+  </div>, document.body)
 }
 
 export function Drawer({ title, eyebrow, onClose, children }: { title: string; eyebrow?: string; onClose: () => void; children: ReactNode }) {
@@ -87,10 +88,10 @@ export function Drawer({ title, eyebrow, onClose, children }: { title: string; e
   const returnFocusRef = useRef<HTMLElement | null>(document.activeElement as HTMLElement | null)
   const titleId = useId()
   useDialogBehavior(ref, onClose, returnFocusRef)
-  return <div className="modal-backdrop" onMouseDown={(event) => closeFromBackdrop(event, onClose)}><aside ref={ref} className="drawer" role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1} onMouseDown={(event) => event.stopPropagation()}>
+  return createPortal(<div className="modal-backdrop" onMouseDown={(event) => closeFromBackdrop(event, onClose)}><aside ref={ref} className="drawer" role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1} onMouseDown={(event) => event.stopPropagation()}>
     <button type="button" className="icon-button modal-close" onClick={onClose} aria-label="Fechar"><X size={19} /></button>
     {eyebrow && <Eyebrow accent>{eyebrow}</Eyebrow>}<h2 id={titleId}>{title}</h2>{children}
-  </aside></div>
+  </aside></div>, document.body)
 }
 
 export function BackButton({ onClick, label = 'Voltar' }: { onClick: () => void; label?: string }) {

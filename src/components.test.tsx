@@ -64,6 +64,17 @@ function ModalHarness({ close = vi.fn() }: { close?: () => void }) {
 }
 
 describe('shared dialog behavior', () => {
+  it('renders the viewport backdrop at the document root', async () => {
+    const { container } = render(<ModalHarness />)
+    fireEvent.click(screen.getByRole('button', { name: 'Abrir diálogo' }))
+
+    const dialog = await screen.findByRole('dialog')
+    const backdrop = dialog.parentElement
+    expect(backdrop).toHaveClass('modal-backdrop')
+    expect(backdrop?.parentElement).toBe(document.body)
+    expect(container).not.toContainElement(backdrop)
+  })
+
   it('focuses content, traps focus, closes on Escape, and restores the trigger', async () => {
     render(<ModalHarness />)
     const trigger = screen.getByRole('button', { name: 'Abrir diálogo' })
