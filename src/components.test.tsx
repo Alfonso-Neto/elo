@@ -91,7 +91,7 @@ describe('shared dialog behavior', () => {
     expect(screen.getByRole('button', { name: 'Fechar' })).toHaveFocus()
 
     fireEvent.keyDown(window, { key: 'Escape' })
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
     expect(trigger).toHaveFocus()
     expect(document.body).not.toHaveClass('modal-open')
   })
@@ -108,7 +108,7 @@ describe('shared dialog behavior', () => {
     expect(screen.getByRole('dialog')).toBeInTheDocument()
 
     fireEvent.mouseDown(backdrop, { button: 0 })
-    expect(close).toHaveBeenCalledTimes(1)
+    await waitFor(() => expect(close).toHaveBeenCalledTimes(1))
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
 })

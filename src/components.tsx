@@ -1,5 +1,5 @@
-import { useEffect, useId, useRef, type ReactNode, type RefObject } from 'react'
-import { createPortal } from 'react-dom'
+import { useCallback, useEffect, useId, useRef, type ReactNode, type RefObject } from 'react'
+import { createPortal, flushSync } from 'react-dom'
 import { Check, ChevronLeft, Link2, Pause, Play, X } from 'lucide-react'
 
 const dialogStack: HTMLElement[] = []
@@ -70,14 +70,27 @@ function closeFromBackdrop(event: React.MouseEvent<HTMLElement>, onClose: () => 
   if (event.button === 0 && event.target === event.currentTarget) onClose()
 }
 
+function useAnimatedDialogClose(onClose: () => void) {
+  return useCallback(() => {
+    const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? true
+    const transitionDocument = document as Document & { startViewTransition?: (update: () => void) => unknown }
+    if (reduceMotion || !transitionDocument.startViewTransition) {
+      onClose()
+      return
+    }
+    transitionDocument.startViewTransition(() => flushSync(onClose))
+  }, [onClose])
+}
+
 export function Modal({ title, eyebrow, onClose, children, size = 'medium' }: { title: string; eyebrow?: string; onClose: () => void; children: ReactNode; size?: 'small' | 'medium' | 'large' }) {
   const ref = useRef<HTMLElement>(null)
   const returnFocusRef = useRef<HTMLElement | null>(document.activeElement as HTMLElement | null)
   const titleId = useId()
-  useDialogBehavior(ref, onClose, returnFocusRef)
-  return createPortal(<div className="modal-backdrop" onMouseDown={(event) => closeFromBackdrop(event, onClose)}>
+  const requestClose = useAnimatedDialogClose(onClose)
+  useDialogBehavior(ref, requestClose, returnFocusRef)
+  return createPortal(<div className="modal-backdrop" onMouseDown={(event) => closeFromBackdrop(event, requestClose)}>
     <section ref={ref} className={`modal ${size}`} role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1} onMouseDown={(event) => event.stopPropagation()}>
-      <button type="button" className="icon-button modal-close" onClick={onClose} aria-label="Fechar"><X size={19} /></button>
+      <button type="button" className="icon-button modal-close" onClick={requestClose} aria-label="Fechar"><X size={19} /></button>
       {eyebrow && <Eyebrow accent>{eyebrow}</Eyebrow>}<h2 id={titleId}>{title}</h2>{children}
     </section>
   </div>, document.body)
@@ -87,9 +100,10 @@ export function Drawer({ title, eyebrow, onClose, children }: { title: string; e
   const ref = useRef<HTMLElement>(null)
   const returnFocusRef = useRef<HTMLElement | null>(document.activeElement as HTMLElement | null)
   const titleId = useId()
-  useDialogBehavior(ref, onClose, returnFocusRef)
-  return createPortal(<div className="modal-backdrop" onMouseDown={(event) => closeFromBackdrop(event, onClose)}><aside ref={ref} className="drawer" role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1} onMouseDown={(event) => event.stopPropagation()}>
-    <button type="button" className="icon-button modal-close" onClick={onClose} aria-label="Fechar"><X size={19} /></button>
+  const requestClose = useAnimatedDialogClose(onClose)
+  useDialogBehavior(ref, requestClose, returnFocusRef)
+  return createPortal(<div className="modal-backdrop" onMouseDown={(event) => closeFromBackdrop(event, requestClose)}><aside ref={ref} className="drawer" role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1} onMouseDown={(event) => event.stopPropagation()}>
+    <button type="button" className="icon-button modal-close" onClick={requestClose} aria-label="Fechar"><X size={19} /></button>
     {eyebrow && <Eyebrow accent>{eyebrow}</Eyebrow>}<h2 id={titleId}>{title}</h2>{children}
   </aside></div>, document.body)
 }
