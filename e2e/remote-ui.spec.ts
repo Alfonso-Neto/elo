@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Locator, type Page } from '@playwright/test'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -54,6 +54,16 @@ async function expectBackdropCoversViewport(page: Page) {
   expect(box!.y).toBe(0)
   expect(box!.width).toBe(viewport!.width)
   expect(box!.height).toBe(viewport!.height)
+}
+
+async function expectContained(child: Locator, parent: Locator) {
+  const [childBox, parentBox] = await Promise.all([child.boundingBox(), parent.boundingBox()])
+  expect(childBox).not.toBeNull()
+  expect(parentBox).not.toBeNull()
+  expect(childBox!.x).toBeGreaterThanOrEqual(parentBox!.x - 1)
+  expect(childBox!.y).toBeGreaterThanOrEqual(parentBox!.y - 1)
+  expect(childBox!.x + childBox!.width).toBeLessThanOrEqual(parentBox!.x + parentBox!.width + 1)
+  expect(childBox!.y + childBox!.height).toBeLessThanOrEqual(parentBox!.y + parentBox!.height + 1)
 }
 
 const roleExpectations = {
@@ -121,6 +131,17 @@ test('trainer can open and dismiss the main read-only drawers with restored focu
   await page.setViewportSize({ width: 1280, height: 900 })
   await signIn(page, 'trainer')
 
+  const hero = page.locator('.trainer-hero')
+  const heroHeading = hero.getByRole('heading')
+  await expect(heroHeading).toBeVisible()
+  const [headingBox, topbarBox] = await Promise.all([heroHeading.boundingBox(), page.locator('.topbar').boundingBox()])
+  expect(headingBox).not.toBeNull()
+  expect(topbarBox).not.toBeNull()
+  expect(headingBox!.y).toBeGreaterThanOrEqual(topbarBox!.y + topbarBox!.height)
+  const operationCard = page.locator('.live-operation-card')
+  await expect(operationCard).toBeVisible()
+  await expectContained(operationCard.locator('.section-title'), operationCard)
+
   const notifications = page.getByRole('button', { name: /Abrir atualizações/i })
   await notifications.click()
   await expect(page.getByRole('dialog', { name: 'O que mudou' })).toBeVisible()
@@ -163,6 +184,11 @@ test('trainer can open and dismiss the main read-only drawers with restored focu
   expect(mobileDrawerBox).not.toBeNull()
   expect(mobileDrawerBox!.height).toBeLessThan(740)
   await page.keyboard.press('Escape')
+
+  await page.goto('/#/dashboard')
+  await expect(page.locator('.live-operation-card')).toBeVisible()
+  await expectContained(page.locator('.live-operation-card .section-title'), page.locator('.live-operation-card'))
+  await expectNoHorizontalOverflow(page)
 })
 
 test('mobile overflow navigation exposes every secondary destination', async ({ page }) => {
